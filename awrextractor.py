@@ -48,10 +48,7 @@ import sys
 import argparse
 from typing import List, Tuple, Optional
 import Orange
-#from Orange.evaluation import cross_validation, scoring
-import pickle
 import pandas as pd
-import redis
 import warnings
 import pyarrow as pa
 try:
@@ -59,8 +56,6 @@ try:
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
-import sklearn
-from sklearn.model_selection import train_test_split
 
 def find_blocks(lines: List[str]) -> List[Tuple[str, int, int]]:
     """Return list of (section_name, begin_idx, end_idx) in lines.

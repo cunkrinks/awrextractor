@@ -1,8 +1,5 @@
-Orange
-pickle
+Orange3
 pandas
 redis
-warnings
 pyarrow
 openpyxl
-sklearn
