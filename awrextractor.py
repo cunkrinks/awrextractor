@@ -35,10 +35,20 @@ Python 3.13.5+
 Pandas 2.2.4+
 redis-py 4.5.5+
 PyArrow 12.0.0+
+Orange3 3.34.0+
+openpyxl 3.1.2+ (only if --excel flag is used)
 
 todo:
-- FInalize machine learning model with orange3
-- Add model saving/loading with pickle
+- populate data for analysis databese performance tuning:
+   * Cpu usage
+   * average active sessions
+   * db time
+    * top sql by cpu
+   * Wait events
+   * I/O stats
+   * logswitches
+   * Memory usage
+   * capacity planning
 ======================================================================================================
 """
 
@@ -257,9 +267,10 @@ def main():
     p.add_argument('--section', '-s', help='Only extract this named section')
     p.add_argument('--outdir', '-o', default='out_sections')
     p.add_argument('--csv', action='store_true', help='Write CSV for extracted sections')
-    p.add_argument('--csv-all', action='store_true', help='Write CSV for all sections (even if parsing uncertain)')
-    p.add_argument('--excel', action='store_true', help='Write all sections to a single Excel file (requires openpyxl)')
+    p.add_argument('--csv-all', action='store_true', help='Write CSV for all sections')
+    p.add_argument('--excel', action='store_true', help='Write all sections to a single Excel file')
     p.add_argument('--excel-filename', default='awr_extracted_sections.xlsx', help='Excel output filename (default: awr_extracted_sections.xlsx)')
+    p.add_argument('--verbose', '-v',  action='store_true', help='More detialed output')
     args = p.parse_args()
     pd.set_option('future.no_silent_downcasting', True)
     # Accept either a full/relative path or a filename. Expand user and
@@ -295,8 +306,7 @@ def main():
         keys = list(dfs.keys())
 
     os.makedirs(args.outdir, exist_ok=True)
-    #outname = os.path.join(args.outdir, 'awr_extracted_sections.csv')
-    
+    #outname = os.path.join(args.outdir, 'awr_extracted_sections.csv')    
       
     # export loop
     for name in keys:
@@ -318,11 +328,24 @@ def main():
             print(f"Database Name/ID: {dbname}/{dbid}")
     
         # =====Show a small preview
-        print('\n' + '='*60)
-        print(f"Section: {name}  (rows={(0 if df is None else df.shape[0])})")
-        with pd.option_context('display.max_rows', 10, 'display.max_columns', 20):
-            print(df.head(10).to_string(index=False))
-        
+        if args.verbose:
+            print('\n' + '='*60)
+            print(f"Section: {name}  (rows={(0 if df is None else df.shape[0])})")
+            with pd.option_context('display.max_rows', 10, 'display.max_columns', 20):
+                print(df.head(10).to_string(index=False))
+
+        # =====Store in Redis
+        #try:
+        #    r = redis.Redis(host='192.168.1.233', port=6379, db=2)
+        #    key_name = f"{dbname}/{dbid}:{sanitize_name(name)}"
+        #    df_bytes = pa.serialize_pandas(df).to_pybytes()
+        #    r.set(key_name, df_bytes)
+        #    print(f"Stored section '{name}' in Redis with key '{key_name}'")
+        #except Exception as e:
+        #    print(f"Failed to store section '{name}' in Redis: {e}")
+        #
+        #r.close()
+
         # =====Write CSVs
         if args.csv or args.csv_all:
             
@@ -333,6 +356,10 @@ def main():
 
             except Exception as e:
                 print(f"Failed to write CSV for {name}: {e}")
+    
+    # ===== end of export loop
+    
+    
     # ======Excel export (if requested)
     if args.excel:
         print("\n" + "="*60 + "\n" + "Writing Excel file...")
@@ -349,24 +376,14 @@ def main():
                     # Sanitize sheet name (max 31 chars, no special chars)
                     sheet_name = sanitize_name(name)[:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
-                    print(f"Wrote sheet: {sheet_name}")
+                    if args.verbose:
+                        print(f"Wrote sheet: {sheet_name}")
             print(f"Excel file created: {excel_path}")
         except Exception as e:
             print(f"Failed to write Excel file: {e}", file=sys.stderr)
             sys.exit(5)
-
-
-        # =====Store in Redis
-        #try:
-        #    r = redis.Redis(host='192.168.1.233', port=6379, db=2)
-        #    key_name = f"{dbname}/{dbid}:{sanitize_name(name)}"
-        #    df_bytes = pa.serialize_pandas(df).to_pybytes()
-        #    r.set(key_name, df_bytes)
-        #    print(f"Stored section '{name}' in Redis with key '{key_name}'")
-        #except Exception as e:
-        #    print(f"Failed to store section '{name}' in Redis: {e}")
-        #
-        #r.close()
+    
+    # =====end Excel export        
     
     # ======machine learning with orange3
     #  Data prepation
@@ -435,80 +452,3 @@ if __name__ == '__main__':
 
 
 
-"""
-Kumpulan Code Percobaan Machine Learning dengan Orange3
-siapa tahu bisa berguna di lain waktu
-
-    
- 
- 
-    replace_dict = {'Administrative':0,'Application':1,'Cluster':2,'Commit':3,'Concurrency':4,'Configuration':5,'DB CPU':6,'Network':7,'Other':8,'Scheduler':9,'System I/O':10,'User I/O':11,'Queueing':12}
-    data = df.copy()
-    data['WAIT_CLASS'] = data['WAIT_CLASS'].replace(replace_dict)
-    stats = []
-    for i in data['AVG_SESS']:
-        if i  > num_cpus:
-            stats.append(1)
-        else:
-            stats.append(0)
-    data['STATS'] = stats
-    print(data)
-    feitur = data[['AVG_SESS','STATS']]
-    target = data['WAIT_CLASS']
-    #print(data)
-    feature_1 = Orange.data.ContinuousVariable("AVG_SESS")
-    feature_2 = Orange.data.ContinuousVariable("STATS")
-    target_variable = Orange.data.DiscreteVariable("WAIT_CLASS", values=["Administrative","Application","Cluster","Commit","Concurrency","Configuration","DB CPU","Network","Other","Scheduler","System I/O","User I/O","Queueing"])
-    domain = Orange.data.Domain([feature_1, feature_2], target_variable)           
-    #domain = Orange.data.Domain([feature], target)
-    orange_data = Orange.data.Table.from_numpy(domain, X=feitur, Y=target)
-    test = Orange.data.pandas_compat.table_to_frame(orange_data)
-    print(test)
-    #print (orange_data)
-    #
-    ##train model with cross validation
-    learner = Orange.classification.LogisticRegressionLearner(max_iter=10000, solver='lbfgs', C=1.0)
-    #results_train = Orange.evaluation.TestOnTestData(orange_data[0:100], orange_data, [learner])
-    #print(f"Prediction for the train data: {results_train}")
-    from Orange.evaluation import CrossValidation, scoring
-    results = CrossValidation(orange_data, [learner], k=5)
-    print(f"Prediction for the test data: {results}")
-    accuracy = scoring.CA(results)
-    print(f"Accuracy: {accuracy}")
-    auc = scoring.AUC(results)
-    print(f"AUC: {auc}")            
-    print(f"Results: {results}")     
-    hasil = data
-    hasil['prediction'] = results.predicted[0]
-    print(f"Hasil: {hasil}")
-    print(test)
-
-    #print(f"Pivot Table: {pivot_df}")
-    
-    #f1_score = Orange.evaluation.scoring.F1(results)
-    #print(f"F1 Score: {f1_score}")
-    #precision = Orange.evaluation.scoring.Precision(results)
-    #print(f"Precision: {precision}")
-    #recall = Orange.evaluation.scoring.Recall(results)
-    #print(f"Recall: {recall}")
-    #save model to pickle
-    #with open("logistic_regretions_model.pkcls", "wb") as model_file:
-    #    pickle.dump(learner, model_file)
-    # Load pre-trained model from pickle
-    #with open("logistic_regretions_aas.pkcls", "rb") as model_file:
-    #    model = pickle.load(model_file)
-    #try:    
-    #    prediction = model(orange_data) 
-    #except Exception as e:
-    #    print(f"Failed to make prediction: {e}")
-    #    continue         
-    #print(f"Prediction: {prediction}")
-    #hasil = df
-    #hasil['prediction'] = prediction
-    #print(f"Hasil: {hasil}")
-    #hasil.to_csv(os.path.join(args.outdir, 'section_' + sanitize_name(name) + '_with_prediction.csv'), index=False)
-    #print(f"Wrote CSV with predictions: " + os.path.join(args.outdir, 'section_' + sanitize_name(name) + '_with_prediction.csv'))
-    #print(prediction.classifier)
-    #print(prediction.actual)
-    #print(prediction.probs)
-"""
