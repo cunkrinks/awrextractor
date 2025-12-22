@@ -43,5 +43,16 @@ Usage examples:
     py .\awrtest2.py awr-hist-1738933432-NAKULA-3366-3564.out --csv-all --outdir out_all
 
 
+## TODO list
 
-
+todo:
+- populate data for analysis databese performance tuning:
+   * Cpu usage
+   * average active sessions
+   * db time
+    * top sql by cpu
+   * Wait events
+   * I/O stats
+   * logswitches
+   * Memory usage
+   * capacity planning
