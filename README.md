@@ -1,6 +1,7 @@
 # awrextractor
 
 awrextractor.py - AWR-Miner text file extractor to pandas DataFrames and CSVs
+recomended awr miner script version 4.0.0+
 
 Copyright (C) 2025 Irvansyah(Cunkrink)
 
@@ -46,11 +47,11 @@ Usage examples:
 
     py .\awrextractor.py --help
     usage: awrextractor.py [-h] [--section SECTION] [--outdir OUTDIR] [--csv] [--csv-all] [--excel] [--excel-filename EXCEL_FILENAME]   [--verbose] INPUT
-    
+
     positional arguments:
       INPUT                 Input file path or name (required). If a path is provided it will be used; otherwise the filename is resolved   relative to the current working
                             directory.
-    
+
     options:
       -h, --help            show this help message and exit
       --section, -s SECTION

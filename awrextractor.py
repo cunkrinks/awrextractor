@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 awrtest2.py - AWR-Miner text file extractor to pandas DataFrames and CSVs
+recomended awr miner script version 4.0.0+
 
 Copyright (C) 2025 Irvansyah(Cunkrink)
 
