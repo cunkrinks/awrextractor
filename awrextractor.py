@@ -323,8 +323,9 @@ def main():
             #dbname = df.loc[10, 'STAT_VALUE']
             dbname = df[df['STAT_NAME'] == 'DB_NAME']['STAT_VALUE'].values[0]
             dbid = df[df['STAT_NAME'] == 'DBID']['STAT_VALUE'].values[0]
-            num_cpus = df[df['STAT_NAME'] == '!CPU_COUNT']['STAT_VALUE'].values[0]
-            print(f"Number of CPUs: {num_cpus}")
+            num_core = df[df['STAT_NAME'] == '!CPU_COUNT']['STAT_VALUE'].values[0]
+            num_cpus = df[df['STAT_NAME'] == 'NUM_CPUS']['STAT_VALUE'].values[0]
+            print(f"Number of CPUs (Core/Thread): {num_core}/{num_cpus}")
             print(f"Database Name/ID: {dbname}/{dbid}")
     
         # =====Show a small preview
