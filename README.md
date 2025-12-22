@@ -39,6 +39,7 @@ pandas.DataFrame objects. The first dash row is used to compute column
 boundaries and then removed from data.
 
 Usage examples:
+
     py .\awrtest2.py awr-hist-1738933432-NAKULA-3366-3564.out --section SGA --outdir out_all --csv
     py .\awrtest2.py awr-hist-1738933432-NAKULA-3366-3564.out --csv-all --outdir out_all
 
