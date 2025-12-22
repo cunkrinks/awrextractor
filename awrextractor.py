@@ -331,17 +331,18 @@ def main():
 
         # ====get dbname and db id and number of cpus
         if name == "OS-INFORMATION":
-            dbname = df.loc[10, 'STAT_VALUE']
-            dbid = df.loc[11, 'STAT_VALUE']
-            num_cpus = df.loc[0, 'STAT_VALUE']
+            #dbname = df.loc[10, 'STAT_VALUE']
+            dbname = df[df['STAT_NAME'] == 'DB_NAME']['STAT_VALUE'].values[0]
+            dbid = df[df['STAT_NAME'] == 'DBID']['STAT_VALUE'].values[0]
+            num_cpus = df[df['STAT_NAME'] == '!CPU_COUNT']['STAT_VALUE'].values[0]
             print(f"Number of CPUs: {num_cpus}")
             print(f"Database Name/ID: {dbname}/{dbid}")
     
         # =====Show a small preview
-        #print('\n' + '='*60)
-        #print(f"Section: {name}  (rows={(0 if df is None else df.shape[0])})")
-        #with pd.option_context('display.max_rows', 10, 'display.max_columns', 20):
-        #    print(df.head(10).to_string(index=False))
+        print('\n' + '='*60)
+        print(f"Section: {name}  (rows={(0 if df is None else df.shape[0])})")
+        with pd.option_context('display.max_rows', 10, 'display.max_columns', 20):
+            print(df.head(10).to_string(index=False))
 
         if args.csv or args.csv_all:
             
@@ -368,62 +369,62 @@ def main():
     
     # ======machine learning with orange3
     #  Data prepation
-    df = dfs.get("AVERAGE-ACTIVE-SESSIONS")    
-    pivot_df = df.pivot_table(index='SNAP_ID', columns='WAIT_CLASS', values='AVG_SESS', aggfunc='sum', fill_value=0)
-    pivot_df = pivot_df.astype(float)
-    #pivot_df.reset_index(inplace=True)
-    #print(f"Columns: {list(pivot_df.columns)}") 
-
-    # add total column 
-    pivot_df['Total'] = pivot_df[list(pivot_df.columns)].sum(axis=1)
-
-    # add stats
-    stats=[]
-    for i in pivot_df['Total']:
-        if i  > int(num_cpus):
-            stats.append(1)
-        else:
-            stats.append(0)
-    pivot_df['STATS'] = stats
-    print(f"Pivot Table: {pivot_df}")
-
-
-    
-    #target_variable =  Orange.data.DiscreteVariable("STATS", values=("OK", "NOT OK"))
-
-    #domain = Orange.data.Domain([Orange.data.ContinuousVariable("Administrative"),
-    #             Orange.data.ContinuousVariable("Application"),
-    #             Orange.data.ContinuousVariable("Cluster"),
-    #             Orange.data.ContinuousVariable("Commit"),
-    #             Orange.data.ContinuousVariable("Concurrency"),
-    #             Orange.data.ContinuousVariable("Configuration"),
-    #             Orange.data.ContinuousVariable("DB CPU"),
-    #             Orange.data.ContinuousVariable("Network"),
-    #             Orange.data.ContinuousVariable("Other"),
-    #             Orange.data.ContinuousVariable("Scheduler"),
-    #             Orange.data.ContinuousVariable("System I/O"),
-    #             Orange.data.ContinuousVariable("User I/O"),
-    #             Orange.data.ContinuousVariable("TOTAL"),
-    #             ], target_variable)
-    
-    orange_data = Orange.data.Table.from_numpy(domain=None, X=pivot_df.drop('STATS', axis=1).to_numpy(), Y=pivot_df['STATS'] )
-    learner = Orange.classification.LogisticRegressionLearner(max_iter=10000,  C=1.0)
-    from Orange.evaluation import CrossValidation, scoring
-    warnings.filterwarnings("ignore", category=DeprecationWarning, module='Orange')
-    results = CrossValidation(orange_data, [learner], k=5)
-    
-    print(" ")
-    print("================================ Orange3 Machine Learning Results ================================")
-    print(f"Result Actual: {results.actual}")
-    print(f"Result predicted: {results.predicted}")
-    accuracy = scoring.CA(results)
-    print(f"Accuracy: {accuracy}")
-    auc = scoring.AUC(results)
-    print(f"AUC: {auc}")            
-    #print(f"Results: {results}")     
-    #hasil = pivot_df
-    #hasil['prediction'] = results.predicted[0]
-    #print(f"Hasil: {hasil}")
+    #df = dfs.get("AVERAGE-ACTIVE-SESSIONS")    
+    #pivot_df = df.pivot_table(index='SNAP_ID', columns='WAIT_CLASS', values='AVG_SESS', aggfunc='sum', fill_value=0)
+    #pivot_df = pivot_df.astype(float)
+    ##pivot_df.reset_index(inplace=True)
+    ##print(f"Columns: {list(pivot_df.columns)}") 
+#
+    ## add total column 
+    #pivot_df['Total'] = pivot_df[list(pivot_df.columns)].sum(axis=1)
+#
+    ## add stats
+    #stats=[]
+    #for i in pivot_df['Total']:
+    #    if i  > int(num_cpus):
+    #        stats.append(1)
+    #    else:
+    #        stats.append(0)
+    #pivot_df['STATS'] = stats
+    #print(f"Pivot Table: {pivot_df}")
+#
+#
+    #
+    ##target_variable =  Orange.data.DiscreteVariable("STATS", values=("OK", "NOT OK"))
+#
+    ##domain = Orange.data.Domain([Orange.data.ContinuousVariable("Administrative"),
+    ##             Orange.data.ContinuousVariable("Application"),
+    ##             Orange.data.ContinuousVariable("Cluster"),
+    ##             Orange.data.ContinuousVariable("Commit"),
+    ##             Orange.data.ContinuousVariable("Concurrency"),
+    ##             Orange.data.ContinuousVariable("Configuration"),
+    ##             Orange.data.ContinuousVariable("DB CPU"),
+    ##             Orange.data.ContinuousVariable("Network"),
+    ##             Orange.data.ContinuousVariable("Other"),
+    ##             Orange.data.ContinuousVariable("Scheduler"),
+    ##             Orange.data.ContinuousVariable("System I/O"),
+    ##             Orange.data.ContinuousVariable("User I/O"),
+    ##             Orange.data.ContinuousVariable("TOTAL"),
+    ##             ], target_variable)
+    #
+    #orange_data = Orange.data.Table.from_numpy(domain=None, X=pivot_df.drop('STATS', axis=1).to_numpy(), Y=pivot_df['STATS'] )
+    #learner = Orange.classification.LogisticRegressionLearner(max_iter=10000,  C=1.0)
+    #from Orange.evaluation import CrossValidation, scoring
+    #warnings.filterwarnings("ignore", category=DeprecationWarning, module='Orange')
+    #results = CrossValidation(orange_data, [learner], k=5)
+    #
+    #print(" ")
+    #print("================================ Orange3 Machine Learning Results ================================")
+    #print(f"Result Actual: {results.actual}")
+    #print(f"Result predicted: {results.predicted}")
+    #accuracy = scoring.CA(results)
+    #print(f"Accuracy: {accuracy}")
+    #auc = scoring.AUC(results)
+    #print(f"AUC: {auc}")            
+    ##print(f"Results: {results}")     
+    ##hasil = pivot_df
+    ##hasil['prediction'] = results.predicted[0]
+    ##print(f"Hasil: {hasil}")
 
 
 
