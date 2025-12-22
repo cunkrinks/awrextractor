@@ -40,8 +40,28 @@ boundaries and then removed from data.
 
 Usage examples:
 
-    py .\awrtest2.py awr-hist-1738933432-NAKULA-3366-3564.out --section SGA --outdir out_all --csv
-    py .\awrtest2.py awr-hist-1738933432-NAKULA-3366-3564.out --csv-all --outdir out_all
+    py .\awrtest2.py filename.out --section SGA --outdir out_all --csv
+    py .\awrtest2.py filename.out --csv-all --outdir out_all
+
+
+    py .\awrextractor.py --help
+    usage: awrextractor.py [-h] [--section SECTION] [--outdir OUTDIR] [--csv] [--csv-all] [--excel] [--excel-filename EXCEL_FILENAME]   [--verbose] INPUT
+    
+    positional arguments:
+      INPUT                 Input file path or name (required). If a path is provided it will be used; otherwise the filename is resolved   relative to the current working
+                            directory.
+    
+    options:
+      -h, --help            show this help message and exit
+      --section, -s SECTION
+                            Only extract this named section
+      --outdir, -o OUTDIR
+      --csv                 Write CSV for extracted sections
+      --csv-all             Write CSV for all sections
+      --excel               Write all sections to a single Excel file
+      --excel-filename EXCEL_FILENAME
+                            Excel output filename (default: awr_extracted_sections.xlsx)
+      --verbose, -v         More detialed output
 
 
 ## TODO list
