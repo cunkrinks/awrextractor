@@ -297,29 +297,8 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
     #outname = os.path.join(args.outdir, 'awr_extracted_sections.csv')
     
-    # ======Excel export (if requested)
-    if args.excel:
-        if not OPENPYXL_AVAILABLE:
-            print("Error: --excel flag requires openpyxl. Install with: pip install openpyxl", file=sys.stderr)
-            sys.exit(4)
-        
-        excel_path = os.path.join(args.outdir, args.excel_filename)
-        try:
-            with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-                for name in keys:
-                    df = dfs.get(name)
-                    if df is None or df.shape[0] == 0:
-                        continue
-                    # Sanitize sheet name (max 31 chars, no special chars)
-                    sheet_name = sanitize_name(name)[:31]
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-                    print(f"Wrote sheet: {sheet_name}")
-            print(f"Excel file created: {excel_path}")
-        except Exception as e:
-            print(f"Failed to write Excel file: {e}", file=sys.stderr)
-            sys.exit(5)
-    
-    # CSV export loop
+      
+    # export loop
     for name in keys:
         df = dfs.get(name)
         if df is None:
@@ -343,7 +322,8 @@ def main():
         print(f"Section: {name}  (rows={(0 if df is None else df.shape[0])})")
         with pd.option_context('display.max_rows', 10, 'display.max_columns', 20):
             print(df.head(10).to_string(index=False))
-
+        
+        # =====Write CSVs
         if args.csv or args.csv_all:
             
             try:
@@ -353,6 +333,27 @@ def main():
 
             except Exception as e:
                 print(f"Failed to write CSV for {name}: {e}")
+    # ======Excel export (if requested)
+    if args.excel:
+        print("\n" + "="*60 + "\n" + "Writing Excel file...")
+        if not OPENPYXL_AVAILABLE:
+            print("Error: --excel flag requires openpyxl. Install with: pip install openpyxl", file=sys.stderr)
+            sys.exit(4)
+        excel_path = os.path.join(args.outdir, args.excel_filename)
+        try:
+            with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+                for name in keys:
+                    df = dfs.get(name)
+                    if df is None or df.shape[0] == 0:
+                        continue
+                    # Sanitize sheet name (max 31 chars, no special chars)
+                    sheet_name = sanitize_name(name)[:31]
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    print(f"Wrote sheet: {sheet_name}")
+            print(f"Excel file created: {excel_path}")
+        except Exception as e:
+            print(f"Failed to write Excel file: {e}", file=sys.stderr)
+            sys.exit(5)
 
 
         # =====Store in Redis
