@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 awrtest2.py - AWR-Miner text file extractor to pandas DataFrames and CSVs
 recomended awr miner script version 4.0.0+
@@ -44,7 +43,7 @@ todo:
    * Cpu usage
    * average active sessions
    * db time
-    * top sql by cpu
+   * top sql by cpu
    * Wait events
    * I/O stats
    * logswitches
