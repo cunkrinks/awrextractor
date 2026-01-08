@@ -271,6 +271,13 @@ def main():
     p.add_argument('--excel', action='store_true', help='Write all sections to a single Excel file')
     p.add_argument('--excel-filename', default='awr_extracted_sections.xlsx', help='Excel output filename (default: awr_extracted_sections.xlsx)')
     p.add_argument('--verbose', '-v',  action='store_true', help='More detialed output')
+    p.add_argument('--rag-ingest', action='store_true', help='Ingest parsed DataFrames into Redis for RAG')
+    p.add_argument('--rag-report-snap', nargs=1, help='Generate RAG report for a specific SNAP_ID')
+    p.add_argument('--instance', type=int, help='Instance number for snapshot report')
+    p.add_argument('--rag-report-range', nargs=2, help='Generate RAG report for a range of SNAP_ID')
+    p.add_argument('--rag-ask', nargs='+', help='Ask any question to the RAG system')
+    p.add_argument('--rag-report-all', action='store_true',
+              help='Generate RAG report for the entire file (auto min/max SNAP_ID)')
     args = p.parse_args()
     pd.set_option('future.no_silent_downcasting', True)
     # Accept either a full/relative path or a filename. Expand user and
@@ -285,6 +292,12 @@ def main():
     # Read and validate input file
     try:
         dfs = parse_file_to_dfs(input_path)
+        os_info   = dfs.get("OS-INFORMATION")
+        os_memory = dfs.get("MEMORY")
+        main_metric = dfs.get("MAIN-METRICS")
+        aas = dfs.get("AVERAGE-ACTIVE-SESSIONS")
+        top_wait = dfs.get("TOP-N-TIMED-EVENTS")
+        top_sql = dfs.get("TOP-SQL-BY-SNAPID")
     except FileNotFoundError:
         print(f"Error: Input file not found: {input_path}", file=sys.stderr)
         sys.exit(2)
@@ -359,7 +372,111 @@ def main():
                 print(f"Failed to write CSV for {name}: {e}")
     
     # ===== end of export loop
-    
+
+    # ======RAG ingestion (if requested)
+    if args.rag_ingest:
+        from awr_rag import (
+            create_llm, create_embeddings, create_redis_vectorstore,
+            build_os_info_doc, build_snapshot_superdocs_with_time,
+            build_hourly_superdocs, upsert_documents_to_redis
+        )
+
+        emb = create_embeddings()
+        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
+
+        docs = []
+        if os_info is not None:
+            docs.append(build_os_info_doc(os_info))
+        if all(x is not None for x in [os_info, os_memory, main_metric, aas, top_wait, top_sql]):
+            snap_docs = build_snapshot_superdocs_with_time(os_info, os_memory, main_metric, aas, top_wait, top_sql)
+            docs.extend(snap_docs)
+            hour_docs = build_hourly_superdocs(os_info, os_memory, main_metric, aas, top_wait)
+            docs.extend(hour_docs)
+
+        print(f"Ingesting {len(docs)} documents into Redis...")
+        upsert_documents_to_redis(vs, docs)
+        print("RAG ingestion completed.")
+        return
+    # end RAG ingestion
+
+    # ======RAG question report snap (if requested)
+    if args.rag_report_snap:
+        from awr_rag import create_llm, create_embeddings, create_redis_vectorstore, create_snapshot_report_chain
+
+        snap_id = int(args.rag_report_snap[0])
+        instance = args.instance
+
+        llm = create_llm()
+        emb = create_embeddings()
+        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
+
+        chain = create_snapshot_report_chain(llm, vs, snap_id, instance)
+        report = chain.invoke(snap_id)
+        print(report)
+        return
+    # end RAG report snap
+
+    # ======RAG report range (if requested)
+    if args.rag_report_range:
+        from awr_rag import create_llm, create_embeddings, create_redis_vectorstore, create_range_report_chain
+
+        start_snap = int(args.rag_report_range[0])
+        end_snap = int(args.rag_report_range[1])
+
+        llm = create_llm()
+        emb = create_embeddings()
+        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
+
+        chain = create_range_report_chain(llm, vs, start_snap, end_snap)
+        report = chain.invoke(None)
+        print(report)
+        return
+    # end RAG report range
+
+    # ======RAG ask question (if requested)
+    if args.rag_ask:
+        from awr_rag import create_llm, create_embeddings, create_redis_vectorstore, create_qa_rag_chain
+        question = " ".join(args.rag_ask)
+
+        llm = create_llm()
+        emb = create_embeddings()
+        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
+
+        chain = create_qa_rag_chain(llm, vs)
+        answer = chain.invoke(question)
+        print(answer)
+        return
+    # end RAG ask question
+
+    # ======RAG report all (if requested)
+    if args.rag_report_all:
+        from awr_rag import (
+            create_llm,
+            create_embeddings,
+            create_redis_vectorstore,
+            create_range_report_chain
+        )
+
+        if main_metric is None:
+            print("MAIN-METRICS section not found, cannot determine SNAP_ID range.")
+            return
+
+        min_snap = int(main_metric["SNAP_ID"].min())
+        max_snap = int(main_metric["SNAP_ID"].max())
+
+        print(f"Auto-detected SNAP_ID range: {min_snap} to {max_snap}")
+
+        llm = create_llm()
+        emb = create_embeddings()
+        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
+
+        chain = create_range_report_chain(llm, vs, min_snap, max_snap)
+        report = chain.invoke(None)
+
+        print("\n================ RAG REPORT (ALL SNAPSHOTS) ================\n")
+        print(report)
+        return
+    # end RAG report all
     
     # ======Excel export (if requested)
     if args.excel:
