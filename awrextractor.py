@@ -272,12 +272,14 @@ def main():
     p.add_argument('--excel-filename', default='awr_extracted_sections.xlsx', help='Excel output filename (default: awr_extracted_sections.xlsx)')
     p.add_argument('--verbose', '-v',  action='store_true', help='More detialed output')
     p.add_argument('--rag-ingest', action='store_true', help='Ingest parsed DataFrames into Redis for RAG')
-    p.add_argument('--rag-report-snap', nargs=1, help='Generate RAG report for a specific SNAP_ID')
+    p.add_argument('--rag-report-snap', nargs=1, help='Generate RAG report for a specific SNAP_ID (after ingestion)')
     p.add_argument('--instance', type=int, help='Instance number for snapshot report')
-    p.add_argument('--rag-report-range', nargs=2, help='Generate RAG report for a range of SNAP_ID')
-    p.add_argument('--rag-ask', nargs='+', help='Ask any question to the RAG system')
+    p.add_argument('--rag-report-range', nargs=2, help='Generate RAG report for a range of SNAP_ID (after ingestion)')
+    p.add_argument('--rag-ask', nargs='+', help='Ask any question to the RAG system (after ingestion)')
     p.add_argument('--rag-report-all', action='store_true',
-              help='Generate RAG report for the entire file (auto min/max SNAP_ID)')
+              help='Generate RAG report for the entire file (auto min/max SNAP_ID) (after ingestion)')
+    p.add_argument('--rag-run-all', action='store_true',
+              help='Parse → ingest → generate full-range RAG report in one execution')
     args = p.parse_args()
     pd.set_option('future.no_silent_downcasting', True)
     # Accept either a full/relative path or a filename. Expand user and

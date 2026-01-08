@@ -27,6 +27,25 @@ from langchain_core.documents import Document
 
 
 # ============================================================
+# GLOBAL SANITIZER
+# ============================================================
+
+def sanitize_numeric(df: pd.DataFrame, numeric_cols: List[str]) -> pd.DataFrame:
+    """
+    Convert selected columns to numeric safely.
+    Any invalid value becomes 0.0.
+    """
+    if df is None or df.empty:
+        return df
+
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+    return df
+
+
+# ============================================================
 # 1. LLM & Embeddings (LM Studio)
 # ============================================================
 
@@ -119,6 +138,7 @@ Platform:
         },
     }
 
+
 # ---------- Top SQL section (per snapshot) ----------
 
 def build_top_sql_section(top_sql_df: pd.DataFrame, snap_id: int) -> str:
@@ -134,11 +154,30 @@ def build_top_sql_section(top_sql_df: pd.DataFrame, snap_id: int) -> str:
     if top_sql_df is None or top_sql_df.empty:
         return "(No SQL data available for this snapshot)"
 
+    # Sanitize numeric columns globally
+    top_sql_df = sanitize_numeric(
+        top_sql_df,
+        [
+            "ELAP_S",
+            "CPU_T_S",
+            "EXECS",
+            "BUFFER_GETS",
+            "ROWS_PROC",
+            "READ_MB",
+            "IO_WAIT",
+            "PHY_READ_GB",
+            "DIRECT_W_GB",
+            "PX_SERVERS_EXECS",
+            "PLAN_CHANGE",
+            "PLANS",
+        ],
+    )
+
     df = top_sql_df[top_sql_df["SNAP_ID"] == snap_id]
     if df.empty:
         return "(No SQL data available for this snapshot)"
 
-    # Sort by elapsed rank
+    # Sort by elapsed rank or elapsed time
     if "ELAP_RANK" in df.columns:
         df = df.sort_values("ELAP_RANK")
     elif "ELAP_S" in df.columns:
@@ -147,7 +186,8 @@ def build_top_sql_section(top_sql_df: pd.DataFrame, snap_id: int) -> str:
     lines: List[str] = []
 
     for _, row in df.iterrows():
-        lines.append(f"""
+        lines.append(
+            f"""
 {row.get('ELAP_RANK', '')}. SQL_ID {row['SQL_ID']}
    - Schema: {row.get('PARSING_SCHEMA_NAME', '')}
    - Module: {row.get('MODULE', '')}
@@ -165,7 +205,8 @@ def build_top_sql_section(top_sql_df: pd.DataFrame, snap_id: int) -> str:
    - Plan Hash: {row.get('PLAN_HASH', '')}
    - Plan Changes: {row.get('PLAN_CHANGE', '')}
    - Plans Seen: {row.get('PLANS', '')}
-""".rstrip())
+""".rstrip()
+        )
 
     return "\n\n".join(lines) if lines else "(No SQL rows for this snapshot)"
 
@@ -177,20 +218,39 @@ def summarize_top_sql_for_snapshot(top_sql_df: pd.DataFrame, snap_id: int) -> st
     if top_sql_df is None or top_sql_df.empty:
         return "Tidak ada data SQL untuk snapshot ini."
 
-    df = top_sql_df[top_sql_df["SNAP_ID"] == snap_id]
+    df = top_sql_df[top_sql_df["SNAP_ID"] == snap_id].copy()
     if df.empty:
         return "Tidak ada data SQL untuk snapshot ini."
 
+    # Convert numeric columns safely
+    df = sanitize_numeric(
+        df,
+        [
+            "ELAP_S",
+            "CPU_T_S",
+            "EXECS",
+            "BUFFER_GETS",
+            "ROWS_PROC",
+            "READ_MB",
+            "IO_WAIT",
+            "PHY_READ_GB",
+            "DIRECT_W_GB",
+        ],
+    )
+
+    # Sorting setelah numeric conversion
     if "ELAP_RANK" in df.columns:
         df = df.sort_values("ELAP_RANK")
     else:
         df = df.sort_values("ELAP_S", ascending=False)
 
+    # Ambil top1 setelah numeric conversion
     top1 = df.iloc[0]
 
-    total_elapsed = df["ELAP_S"].sum() if "ELAP_S" in df.columns else 0
-    total_cpu = df["CPU_T_S"].sum() if "CPU_T_S" in df.columns else 0
-    total_execs = df["EXECS"].sum() if "EXECS" in df.columns else 0
+    # Total summary
+    total_elapsed = float(df["ELAP_S"].sum())
+    total_cpu = float(df["CPU_T_S"].sum())
+    total_execs = float(df["EXECS"].sum()) if "EXECS" in df.columns else 0.0
     unique_sql = df["SQL_ID"].nunique()
     unique_schema = df["PARSING_SCHEMA_NAME"].nunique()
     top_module = (
@@ -199,7 +259,7 @@ def summarize_top_sql_for_snapshot(top_sql_df: pd.DataFrame, snap_id: int) -> st
         else "N/A"
     )
 
-    lines = []
+    lines: List[str] = []
 
     lines.append(
         f"Total {unique_sql} SQL di Top SQL untuk SNAP_ID {snap_id} "
@@ -212,11 +272,15 @@ def summarize_top_sql_for_snapshot(top_sql_df: pd.DataFrame, snap_id: int) -> st
 
     lines.append(
         f"SQL paling berat berdasarkan elapsed time adalah SQL_ID {top1['SQL_ID']} "
-        f"dengan elapsed {top1['ELAP_S']:.1f} s, CPU {top1['CPU_T_S']:.1f} s, "
-        f"execs {top1['EXECS']}, buffer gets {top1['BUFFER_GETS']}."
+        f"dengan elapsed {float(top1['ELAP_S']):.1f} s, CPU {float(top1['CPU_T_S']):.1f} s, "
+        f"execs {int(top1.get('EXECS', 0))}, buffer gets {int(top1.get('BUFFER_GETS', 0))}."
     )
 
-    plan_change_sql = df[df.get("PLAN_CHANGE", 0) > 0] if "PLAN_CHANGE" in df.columns else pd.DataFrame()
+    plan_change_sql = (
+        df[df.get("PLAN_CHANGE", 0) > 0]
+        if "PLAN_CHANGE" in df.columns
+        else pd.DataFrame()
+    )
     if not plan_change_sql.empty:
         lines.append(
             f"Terdapat {len(plan_change_sql)} SQL dengan plan change dalam snapshot ini."
@@ -247,13 +311,69 @@ def build_snapshot_superdocs_with_time(
     """
     docs: List[Dict[str, Any]] = []
 
+    # Sanitize numeric columns used here
+    os_memory = sanitize_numeric(os_memory, ["SGA", "PGA", "TOTAL"])
+    main_metric = sanitize_numeric(
+        main_metric,
+        [
+            "os_cpu",
+            "os_cpu_max",
+            "OS_CPU",
+            "OS_CPU_MAX",
+            "db_cpu_ratio",
+            "DB_CPU_RATIO",
+            "db_wait_ratio",
+            "DB_WAIT_RATIO",
+            "aas",
+            "AAS",
+            "exec_s",
+            "EXEC_S",
+            "logons_s",
+            "LOGONS_S",
+            "sql_res_t_cs",
+            "SQL_RES_T_CS",
+            "read_mb_s",
+            "READ_MB_S",
+            "write_mb_s",
+            "WRITE_MB_S",
+            "read_iops",
+            "READ_IOPS",
+            "write_iops",
+            "WRITE_IOPS",
+            "redo_mb_s",
+            "REDO_MB_S",
+            "gc_cr_rec_s",
+            "GC_CR_REC_S",
+            "gc_cu_rec_s",
+            "GC_CU_REC_S",
+        ],
+    )
+    aas = sanitize_numeric(aas, ["AVG_SESS"])
+    top_wait = sanitize_numeric(top_wait, ["PCTDBT", "TOTAL_TIME_S"])
+    top_sql = sanitize_numeric(
+        top_sql,
+        [
+            "ELAP_S",
+            "CPU_T_S",
+            "EXECS",
+            "BUFFER_GETS",
+            "ROWS_PROC",
+            "READ_MB",
+            "IO_WAIT",
+            "PHY_READ_GB",
+            "DIRECT_W_GB",
+            "PX_SERVERS_EXECS",
+            "PLAN_CHANGE",
+            "PLANS",
+        ],
+    )
+
     os_dict = {row["STAT_NAME"]: row["STAT_VALUE"] for _, row in os_info.iterrows()}
     db_name = os_dict.get("DB_NAME")
     platform = os_dict.get("!PLATFORM_NAME")
 
     mm = main_metric.copy()
     # Expect columns: snap, end, dur_m, inst, ...
-    # Normalize column names if needed
     col_map = {
         "SNAP_ID": "snap",
         "END": "end",
@@ -418,6 +538,46 @@ def build_hourly_superdocs(
     """
     docs: List[Dict[str, Any]] = []
 
+    # Sanitize numeric
+    os_memory = sanitize_numeric(os_memory, ["SGA", "PGA", "TOTAL"])
+    main_metric = sanitize_numeric(
+        main_metric,
+        [
+            "os_cpu",
+            "os_cpu_max",
+            "OS_CPU",
+            "OS_CPU_MAX",
+            "db_cpu_ratio",
+            "DB_CPU_RATIO",
+            "db_wait_ratio",
+            "DB_WAIT_RATIO",
+            "aas",
+            "AAS",
+            "exec_s",
+            "EXEC_S",
+            "logons_s",
+            "LOGONS_S",
+            "sql_res_t_cs",
+            "SQL_RES_T_CS",
+            "read_mb_s",
+            "READ_MB_S",
+            "write_mb_s",
+            "WRITE_MB_S",
+            "read_iops",
+            "READ_IOPS",
+            "write_iops",
+            "WRITE_IOPS",
+            "redo_mb_s",
+            "REDO_MB_S",
+            "gc_cr_rec_s",
+            "GC_CR_REC_S",
+            "gc_cu_rec_s",
+            "GC_CU_REC_S",
+        ],
+    )
+    aas = sanitize_numeric(aas, ["AVG_SESS"])
+    top_wait = sanitize_numeric(top_wait, ["PCTDBT", "TOTAL_TIME_S"])
+
     os_dict = {row["STAT_NAME"]: row["STAT_VALUE"] for _, row in os_info.iterrows()}
     db_name = os_dict.get("DB_NAME")
     platform = os_dict.get("!PLATFORM_NAME")
@@ -445,8 +605,10 @@ def build_hourly_superdocs(
         aas_hour = aas[aas["SNAP_ID"].isin(snap_ids)]
         tw_hour = top_wait[top_wait["SNAP_ID"].isin(snap_ids)]
 
-        cpu_avg = mm_hour["os_cpu"].mean() if "os_cpu" in mm_hour.columns else mm_hour["OS_CPU"].mean()
-        cpu_max = mm_hour["os_cpu_max"].max() if "os_cpu_max" in mm_hour.columns else mm_hour["OS_CPU_MAX"].max()
+        cpu_series = mm_hour.get("os_cpu", mm_hour.get("OS_CPU"))
+        cpu_max_series = mm_hour.get("os_cpu_max", mm_hour.get("OS_CPU_MAX"))
+        cpu_avg = cpu_series.mean() if cpu_series is not None else 0.0
+        cpu_max = cpu_max_series.max() if cpu_max_series is not None else 0.0
 
         cpu_lines = []
         for _, row in mm_hour.iterrows():
@@ -462,9 +624,9 @@ def build_hourly_superdocs(
 
         mem_lines = []
         for inst in sorted(mem_hour["INSTANCE_NUMBER"].unique()):
-            df = mem_hour[mem_hour["INSTANCE_NUMBER"] == inst]
+            df_i = mem_hour[mem_hour["INSTANCE_NUMBER"] == inst]
             mem_lines.append(
-                f"Instance {inst}: SGA={df['SGA'].mean()} GB, PGA={df['PGA'].mean()} GB"
+                f"Instance {inst}: SGA={df_i['SGA'].mean()} GB, PGA={df_i['PGA'].mean()} GB"
             )
 
         aas_lines = []
@@ -480,6 +642,13 @@ def build_hourly_superdocs(
 - %DB Time: {row['PCTDBT']}
 - Total Wait Time: {row['TOTAL_TIME_S']}"""
             )
+
+        # I/O aggregated
+        read_mb_s = mm_hour.get("read_mb_s", mm_hour.get("READ_MB_S"))
+        write_mb_s = mm_hour.get("write_mb_s", mm_hour.get("WRITE_MB_S"))
+        read_iops = mm_hour.get("read_iops", mm_hour.get("READ_IOPS"))
+        write_iops = mm_hour.get("write_iops", mm_hour.get("WRITE_IOPS"))
+        redo_mb_s = mm_hour.get("redo_mb_s", mm_hour.get("REDO_MB_S"))
 
         text = f"""
 Hourly Super-Document — {hour:02d}:00–{hour:02d}:59
@@ -514,11 +683,11 @@ Max OS CPU: {cpu_max}%
 ============================================================
 5. I/O Summary (Aggregated)
 ============================================================
-Read MB/s: {mm_hour.get('read_mb_s', mm_hour.get('READ_MB_S')).mean()}
-Write MB/s: {mm_hour.get('write_mb_s', mm_hour.get('WRITE_MB_S')).mean()}
-Read IOPS: {mm_hour.get('read_iops', mm_hour.get('READ_IOPS')).mean()}
-Write IOPS: {mm_hour.get('write_iops', mm_hour.get('WRITE_IOPS')).mean()}
-Redo MB/s: {mm_hour.get('redo_mb_s', mm_hour.get('REDO_MB_S')).mean()}
+Read MB/s: {read_mb_s.mean() if read_mb_s is not None else 'N/A'}
+Write MB/s: {write_mb_s.mean() if write_mb_s is not None else 'N/A'}
+Read IOPS: {read_iops.mean() if read_iops is not None else 'N/A'}
+Write IOPS: {write_iops.mean() if write_iops is not None else 'N/A'}
+Redo MB/s: {redo_mb_s.mean() if redo_mb_s is not None else 'N/A'}
 
 ============================================================
 6. RAC / Global Cache Summary
@@ -546,6 +715,7 @@ gc cu rec/s: {mm_hour.get('gc_cu_rec_s', mm_hour.get('GC_CU_REC_S')).mean()}
 
     return docs
 
+
 # ============================================================
 # 4. SQL Trend, Plan Change, Bottleneck Classification
 # ============================================================
@@ -561,6 +731,22 @@ def sql_trend_over_range(
     """
     if top_sql_df is None or top_sql_df.empty:
         return pd.DataFrame()
+
+    top_sql_df = sanitize_numeric(
+        top_sql_df,
+        [
+            "EXECS",
+            "CPU_T_S",
+            "ELAP_S",
+            "BUFFER_GETS",
+            "READ_MB",
+            "IO_WAIT",
+            "PHY_READ_GB",
+            "DIRECT_W_GB",
+            "PLAN_CHANGE",
+            "PLANS",
+        ],
+    )
 
     df = top_sql_df[
         (top_sql_df["SNAP_ID"] >= start_snap)
@@ -612,8 +798,7 @@ def summarize_sql_trend_text(
 
     lines = [
         f"Analisa SQL dalam range SNAP_ID {start_snap} sampai {end_snap}:",
-        f"Total SQL unik: {agg_df['SQL_ID'].nunique()}, "
-        f"jumlah entri agregat: {len(agg_df)}.",
+        f"Total SQL unik: {agg_df['SQL_ID'].nunique()}, jumlah entri agregat: {len(agg_df)}.",
     ]
 
     for _, row in top.iterrows():
@@ -649,6 +834,8 @@ def detect_sql_plan_changes(
     if top_sql_df is None or top_sql_df.empty:
         return pd.DataFrame()
 
+    top_sql_df = sanitize_numeric(top_sql_df, ["PLANS", "PLAN_CHANGE", "ELAP_S", "CPU_T_S"])
+
     df = top_sql_df[
         (top_sql_df["SNAP_ID"] >= start_snap)
         & (top_sql_df["SNAP_ID"] <= end_snap)
@@ -657,17 +844,21 @@ def detect_sql_plan_changes(
     if df.empty:
         return pd.DataFrame()
 
-    by_sql = df.groupby("SQL_ID").agg(
-        schemas=("PARSING_SCHEMA_NAME", lambda x: list(sorted(set(x)))),
-        modules=("MODULE", lambda x: list(sorted(set(x)))),
-        plan_hashes=("PLAN_HASH", lambda x: list(sorted(set(x)))),
-        min_plans=("PLANS", "min"),
-        max_plans=("PLANS", "max"),
-        max_plan_change=("PLAN_CHANGE", "max"),
-        snaps=("SNAP_ID", "nunique"),
-        total_elapsed_s=("ELAP_S", "sum"),
-        total_cpu_s=("CPU_T_S", "sum"),
-    ).reset_index()
+    by_sql = (
+        df.groupby("SQL_ID")
+        .agg(
+            schemas=("PARSING_SCHEMA_NAME", lambda x: list(sorted(set(x)))),
+            modules=("MODULE", lambda x: list(sorted(set(x)))),
+            plan_hashes=("PLAN_HASH", lambda x: list(sorted(set(x)))),
+            min_plans=("PLANS", "min"),
+            max_plans=("PLANS", "max"),
+            max_plan_change=("PLAN_CHANGE", "max"),
+            snaps=("SNAP_ID", "nunique"),
+            total_elapsed_s=("ELAP_S", "sum"),
+            total_cpu_s=("CPU_T_S", "sum"),
+        )
+        .reset_index()
+    )
 
     mask = (
         (by_sql["max_plan_change"] > 0)
@@ -691,7 +882,7 @@ def summarize_plan_change_text(
 
     lines = [
         f"SQL dengan indikasi plan change antara SNAP_ID {start_snap} dan {end_snap}:",
-        f"Total: {len(plan_df)} SQL."
+        f"Total: {len(plan_df)} SQL.",
     ]
 
     for _, row in plan_df.iterrows():
@@ -728,23 +919,18 @@ def classify_sql_bottleneck(row: pd.Series) -> List[str]:
     plan_change = row.get("max_plan_changes", 0)
     execs = row.get("total_execs", 0.0)
 
-    # CPU-bound
     if ela > 0 and (cpu / ela) > 0.7 and cpu > 10:
         labels.append("CPU-bound")
 
-    # IO-bound
     if io_wait > 10 and (read_mb > 100 or phys_gb > 1.0):
         labels.append("IO-bound")
 
-    # PX-intensive (heuristic via direct write)
     if direct_w > 5.0:
         labels.append("PX-intensive")
 
-    # Plan instability
     if plan_change > 0 or plans > 1:
         labels.append("Plan-change-risk")
 
-    # Low impact
     if ela < 10 and cpu < 5 and execs < 10:
         labels.append("Low-impact")
 
@@ -1027,4 +1213,3 @@ Gunakan struktur:
     )
 
     return chain
-
