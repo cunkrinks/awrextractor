@@ -207,7 +207,7 @@ Command dan option lengkap:
 - Menambahkan aturan timestamp
 - Menentukan gaya hybrid (AWR + ADDM + AI Insight)
 
-👤 Author
+# 👤 Author
 
 - Muhamad Irvansyah (Cunkrink) — Creator & Lead Developer
 - Microsoft Copilot — AI collaborator for design, prompting, and architecture refinement
