@@ -59,9 +59,7 @@ import os
 import sys
 import argparse
 from typing import List, Tuple, Optional
-import Orange
 import pandas as pd
-import warnings
 import pyarrow as pa
 import torch
 try:
@@ -155,56 +153,7 @@ def rag_run_all(
         docs.extend(build_hourly_superdocs(
             os_info, os_memory, main_metric, aas, top_wait
         ))
-    """ 
-    # ============================
-    # 🔍 SUPERDOC DEBUGGING PREVIEW
-    # ============================
-
-    print("\n================ SUPERDOC DEBUGGING PREVIEW ================\n")
-
-    # 1. Jumlah total dokumen
-    print(f"Total documents: {len(docs)}")
-
-    # 2. Hitung kategori dokumen
-    from collections import Counter
-    cat_count = Counter([d["metadata"].get("type", "unknown") for d in docs])
-    print("\nDocument count per category:")
-    for k, v in cat_count.items():
-        print(f" - {k}: {v}")
-
-    # 3. Preview 1 dokumen pertama
-    if docs:
-        d0 = docs[0]
-        print("\n---------------- PREVIEW: FIRST DOCUMENT ----------------")
-        print("Metadata:", d0["metadata"])
-        print("\nContent (first 500 chars):")
-        print(d0["content"][:500])
-        print(f"\nContent length: {len(d0['content'])} characters")
-
-    # 4. Preview 3 dokumen pertama
-    print("\n---------------- PREVIEW: FIRST 3 DOCUMENTS ----------------")
-    for i, d in enumerate(docs[:3]):
-        print(f"\n[Document {i}]")
-        print("Metadata:", d["metadata"])
-        print("Content preview:", d["content"][:200].replace("\n", " ") + "...")
-        print(f"Length: {len(d['content'])} chars")
-
-    # 5. Dokumen terpanjang
-    longest_doc = max(docs, key=lambda d: len(d["content"]))
-    print("\n---------------- PREVIEW: LONGEST DOCUMENT ----------------")
-    print("Metadata:", longest_doc["metadata"])
-    print(f"Length: {len(longest_doc['content'])} chars")
-    print("Preview:", longest_doc["content"][:500])
-
-    # 6. Estimasi token (kasar)
-    def estimate_tokens(text):
-        return int(len(text) / 4)  # rata-rata 1 token ≈ 4 chars
-
-    total_tokens = sum(estimate_tokens(d["content"]) for d in docs)
-    print(f"\nEstimated total tokens: {total_tokens:,}")
-
-    print("\n============================================================\n")
-    """
+    
 
     docs = [normalize_doc(d) for d in docs]
 
@@ -238,6 +187,9 @@ def rag_run_all(
     # INGESTION WITH PROGRESS BAR
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")    
     upsert_documents_to_redis(vectorstore, docs)
+    
+    
+    #parallel ingestion (faster?)
     #upsert_documents_to_redis_parallel(
     #vectorstore,
     #docs,
@@ -247,8 +199,7 @@ def rag_run_all(
     #)
 
     # Auto SNAP range
-    #start_snap = int(main_metric["SNAP_ID"].min())
-    #end_snap = int(main_metric["SNAP_ID"].max())
+    
     snap_col = None
     for c in ["SNAP_ID", "snap", "Snap", "snap_id"]:
         if c in main_metric.columns:
@@ -748,18 +699,6 @@ def main():
                 print(df.head(10).to_string(index=False))
 
 
-        # =====Store in Redis
-        #try:
-        #    r = redis.Redis(host='192.168.1.233', port=6379, db=2)
-        #    key_name = f"{dbname}/{dbid}:{sanitize_name(name)}"
-        #    df_bytes = pa.serialize_pandas(df).to_pybytes()
-        #    r.set(key_name, df_bytes)
-        #    print(f"Stored section '{name}' in Redis with key '{key_name}'")
-        #except Exception as e:
-        #    print(f"Failed to store section '{name}' in Redis: {e}")
-        #
-        #r.close()
-
         # =====Write CSVs
         if args.csv or args.csv_all:
             
@@ -928,66 +867,6 @@ def main():
     
     # =====end Excel export        
     
-    # ======machine learning with orange3
-    #  Data prepation
-    #df = dfs.get("AVERAGE-ACTIVE-SESSIONS")    
-    #pivot_df = df.pivot_table(index='SNAP_ID', columns='WAIT_CLASS', values='AVG_SESS', aggfunc='sum', fill_value=0)
-    #pivot_df = pivot_df.astype(float)
-    ##pivot_df.reset_index(inplace=True)
-    ##print(f"Columns: {list(pivot_df.columns)}") 
-#
-    ## add total column 
-    #pivot_df['Total'] = pivot_df[list(pivot_df.columns)].sum(axis=1)
-#
-    ## add stats
-    #stats=[]
-    #for i in pivot_df['Total']:
-    #    if i  > int(num_cpus):
-    #        stats.append(1)
-    #    else:
-    #        stats.append(0)
-    #pivot_df['STATS'] = stats
-    #print(f"Pivot Table: {pivot_df}")
-#
-#
-    #
-    ##target_variable =  Orange.data.DiscreteVariable("STATS", values=("OK", "NOT OK"))
-#
-    ##domain = Orange.data.Domain([Orange.data.ContinuousVariable("Administrative"),
-    ##             Orange.data.ContinuousVariable("Application"),
-    ##             Orange.data.ContinuousVariable("Cluster"),
-    ##             Orange.data.ContinuousVariable("Commit"),
-    ##             Orange.data.ContinuousVariable("Concurrency"),
-    ##             Orange.data.ContinuousVariable("Configuration"),
-    ##             Orange.data.ContinuousVariable("DB CPU"),
-    ##             Orange.data.ContinuousVariable("Network"),
-    ##             Orange.data.ContinuousVariable("Other"),
-    ##             Orange.data.ContinuousVariable("Scheduler"),
-    ##             Orange.data.ContinuousVariable("System I/O"),
-    ##             Orange.data.ContinuousVariable("User I/O"),
-    ##             Orange.data.ContinuousVariable("TOTAL"),
-    ##             ], target_variable)
-    #
-    #orange_data = Orange.data.Table.from_numpy(domain=None, X=pivot_df.drop('STATS', axis=1).to_numpy(), Y=pivot_df['STATS'] )
-    #learner = Orange.classification.LogisticRegressionLearner(max_iter=10000,  C=1.0)
-    #from Orange.evaluation import CrossValidation, scoring
-    #warnings.filterwarnings("ignore", category=DeprecationWarning, module='Orange')
-    #results = CrossValidation(orange_data, [learner], k=5)
-    #
-    #print(" ")
-    #print("================================ Orange3 Machine Learning Results ================================")
-    #print(f"Result Actual: {results.actual}")
-    #print(f"Result predicted: {results.predicted}")
-    #accuracy = scoring.CA(results)
-    #print(f"Accuracy: {accuracy}")
-    #auc = scoring.AUC(results)
-    #print(f"AUC: {auc}")            
-    ##print(f"Results: {results}")     
-    ##hasil = pivot_df
-    ##hasil['prediction'] = results.predicted[0]
-    ##print(f"Hasil: {hasil}")
-
-
 
 
 if __name__ == '__main__':
