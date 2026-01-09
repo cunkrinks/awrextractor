@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.svg" width="260">
+</p>
+
 # 📘 AWR Miner RAG Analyzer
 AWR Miner RAG Analyzer adalah tool modern untuk menganalisis performa Oracle Database menggunakan pendekatan Retrieval-Augmented Generation (RAG).
 Program ini menggabungkan:
