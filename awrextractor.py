@@ -1,5 +1,5 @@
 """
-awrtest2.py - AWR-Miner text file extractor to pandas DataFrames and CSVs
+awrextractor.py - AWR-Miner text file extractor to pandas DataFrames, CSVs, excel and RAG analysis
 recomended awr miner script version 4.0.0+
 
 Copyright (C) 2025 Irvansyah(Cunkrink)
@@ -18,37 +18,41 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
 ======================================================================================================
-Extract every ~~BEGIN-...~~ / ~~END-...~~ block from an AWR-like text file
-and convert blocks that contain dash-delimited column lines into
-pandas.DataFrame objects. The first dash row is used to compute column
-boundaries and then removed from data.
-
-Usage examples:
-    py .\awrtest2.py awr-hist-1738933432-NAKULA-3366-3564.out --section SGA --outdir out_all --csv
-    py .\awrtest2.py awr-hist-1738933432-NAKULA-3366-3564.out --csv-all --outdir out_all
-
-This script follows the spirit of `getdata` in `pandas_test.py` but with
-more robust dash-line column boundary detection and CSV export support.
+- Parsing AWR Miner text file
+- Konversi tipe data
+- Normalisasi kolom
+- Ekspor CSV
+- RAG ingestion
+- RAG full pipeline
+- Penentuan SNAP_ID range
+- Penentuan nama file output
 
 Requirements:
-Python 3.13.5+
-Pandas 2.2.4+
-redis-py 4.5.5+
-PyArrow 12.0.0+
-Orange3 3.34.0+
-openpyxl 3.1.2+ (only if --excel flag is used)
+pandas>=2.2.0
+numpy>=1.26.0
+redis>=5.0.0
+pyarrow>=12.0.0
+openpyxl>=3.1.2
+Orange3>=3.34.0
+langchain>=0.2.0
+langchain-community>=0.2.0
+langchain-openai>=0.1.0
+openai>=1.0.0
+tiktoken>=0.6.0
+python-dotenv>=1.0.0
+einops
+sentence-transformers
+tqdm
 
 todo:
-- populate data for analysis databese performance tuning:
-   * Cpu usage
-   * average active sessions
-   * db time
-   * top sql by cpu
-   * Wait events
-   * I/O stats
-   * logswitches
-   * Memory usage
-   * capacity planning
+- create report output ms word format
+- create report output pdf format
+- create report output html format
+- add more data to RAG ingestion (e.g. SQL plan, etc)
+- improve RAG prompting
+- preventive maintenance reportting
+
+
 ======================================================================================================
 """
 
