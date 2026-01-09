@@ -132,11 +132,11 @@ Command dan option lengkap:
                            [--analysis-level {executive,technical,deepdive}] [--recommendation-level {high,medium,expert}]
                            [--language {id,en}] [--style {hybrid}] [--preset {manager,dba,expert,balanced,english}]
                            INPUT
-    
+
     positional arguments:
       INPUT                 Input file path or name (required). If a path is provided it will be used; otherwise the
                             filename is resolved relative to the current working directory.
-    
+
     options:
       -h, --help            show this help message and exit
       --section SECTION, -s SECTION
@@ -207,7 +207,7 @@ Command dan option lengkap:
 Program ini dirilis di bawah lisensi:
 GNU General Public License v3.0 (GPL-3.0)
 
-
+[![GPLv3 License](https://img.shields.io/badge/License-GPL%20v3-yellow.svg)](https://opensource.org/licenses/)
 
 # 🏁 Penutup
 
