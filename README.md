@@ -80,11 +80,13 @@ cd awr-rag-analyzer
 
 
 2. Install dependencies
-pip install -r requirements.txt
+
+    pip install -r requirements.txt
 
 
-3. Pastikan Redis berjalan
-redis-server
+3. Pastikan Redis berjalan (redis stack)
+    
+    redis-server
 
 
 4. Pastikan LM Studio berjalan
