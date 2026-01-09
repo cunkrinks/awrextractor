@@ -1,4 +1,4 @@
-📘 AWR Miner RAG Analyzer
+#📘 AWR Miner RAG Analyzer
 AWR Miner RAG Analyzer adalah tool modern untuk menganalisis performa Oracle Database menggunakan pendekatan Retrieval-Augmented Generation (RAG).
 Program ini menggabungkan:
 - Parsing AWR Miner
@@ -9,8 +9,8 @@ Program ini menggabungkan:
 - Laporan performa otomatis yang lengkap dan profesional
 Hasil akhirnya adalah laporan AWR yang lebih mudah dibaca, lebih informatif, dan lebih actionable dibandingkan laporan AWR standar.
 
-🚀 Fitur Utama
-🔍 Parsing AWR Miner Output
+#🚀 Fitur Utama
+##🔍 Parsing AWR Miner Output
 Program membaca file teks AWR Miner (~~BEGIN-...~~ / ~~END-...~~) dan mengubahnya menjadi DataFrame:
 - OS-INFORMATION
 - MEMORY
@@ -18,12 +18,12 @@ Program membaca file teks AWR Miner (~~BEGIN-...~~ / ~~END-...~~) dan mengubahny
 - AVERAGE-ACTIVE-SESSIONS
 - TOP-N-TIMED-EVENTS
 - TOP-SQL-BY-SNAPID
-🧹 Normalisasi & Konversi Tipe Data
+##🧹 Normalisasi & Konversi Tipe Data
 - SNAP_ID → integer
 - durasi snapshot → integer
 - timestamp snapshot (end) → datetime (%y/%m/%d %H:%M)
 - perhitungan start_time otomatis
-🧠 Super-Documents (RAG Context)
+##🧠 Super-Documents (RAG Context)
 Program membuat dua jenis superdocs:
 - Snapshot Superdocs → per SNAP_ID
 - Hourly Superdocs → agregasi per jam
@@ -36,9 +36,9 @@ Setiap superdoc berisi:
 - RAC / GC
 - Memory
 - Timestamp lengkap
-🗄️ Redis VectorStore
+##🗄️ Redis VectorStore
 Semua superdocs di‑embedding dan disimpan ke Redis untuk semantic search.
-🤖 RAG Report Generator
+##🤖 RAG Report Generator
 Menggunakan LM Studio (OpenAI-compatible API) untuk menghasilkan laporan:
 - Executive Summary
 - Ringkasan Status (Sehat / Peringatan / Kritis)
@@ -51,14 +51,14 @@ Menggunakan LM Studio (OpenAI-compatible API) untuk menghasilkan laporan:
 - Top SQL Analysis
 - Akar Masalah (Root Cause)
 - Rekomendasi Tindakan
-📝 Prompting Engine Oracle-like
+##📝 Prompting Engine Oracle-like
 Prompt dapat dikustomisasi:
 - --analysis-level → executive / technical / deepdive
 - --recommendation-level → high / medium / expert
 - --language → id / en
 - --style → hybrid
 - --preset → manager / dba / expert / balanced / english
-📄 Output Report Profesional
+##📄 Output Report Profesional
 Header laporan berisi:
 - Database name
 - DBID
@@ -73,7 +73,7 @@ Nama file otomatis:
 
 
 
-📦 Instalasi
+#📦 Instalasi
 1. Clone repository
 git clone https://github.com/yourrepo/awr-rag-analyzer.git
 cd awr-rag-analyzer
@@ -92,7 +92,7 @@ redis-server
 - Load embedding model (bge-base)
 - Pastikan API port 1235 aktif
 
-🧪 Cara Menggunakan
+#🧪 Cara Menggunakan
 🔹 Ekstrak semua section AWR Miner
 python awrextractor.py awr-hist.out --csv-all --outdir out_sections
 
@@ -116,7 +116,7 @@ python awrextractor.py awr.out \
 
 
 
-🧩 Struktur Program
+#🧩 Struktur Program
 1. awrextractor.py
 - Parsing AWR Miner text file
 - Konversi tipe data
@@ -144,7 +144,7 @@ python awrextractor.py awr.out \
 - Muhamad Irvansyah (Cunkrink) — Creator & Lead Developer
 - Microsoft Copilot — AI collaborator for design, prompting, and architecture refinement
 
-📜 License
+#📜 License
 Program ini dirilis di bawah lisensi:
 GNU General Public License v3.0 (GPL-3.0)
 
