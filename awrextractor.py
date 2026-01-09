@@ -52,6 +52,7 @@ todo:
 ======================================================================================================
 """
 
+from itertools import chain
 import re
 import os
 import sys
@@ -61,11 +62,249 @@ import Orange
 import pandas as pd
 import warnings
 import pyarrow as pa
+import torch
 try:
     import openpyxl
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
+
+
+def normalize_metadata(meta):
+    new_meta = {}
+    for k, v in meta.items():
+        # Convert list → list of strings
+        if isinstance(v, list):
+            new_meta[k] = [str(x) for x in v]
+        # Convert int/float/bool → string
+        elif isinstance(v, (int, float, bool)):
+            new_meta[k] = str(v)
+        # None → empty string
+        elif v is None:
+            new_meta[k] = ""
+        else:
+            new_meta[k] = v
+    return new_meta
+
+def rag_run_all(
+    os_info,
+    os_memory,
+    main_metric,
+    aas,
+    top_wait,
+    top_sql,
+    redis_url="redis://localhost:6379",
+    index_name="awr_index",
+    llm_base_url="http://localhost:1235/v1",
+    llm_model="meta-llama-3.1-8b-instruct",
+    save_path=None,
+):
+    """
+    Full pipeline:
+    1. Build all documents
+    2. Ingest into Redis (with progress bar)
+    3. Auto-detect SNAP_ID range
+    4. Run RAG range report
+    5. Optionally save report to file
+    """
+
+    from awr_rag import (
+        create_llm,
+        create_embeddings,
+        create_redis_vectorstore,
+        build_os_info_doc,
+        build_snapshot_superdocs_with_time,
+        build_hourly_superdocs,
+        upsert_documents_to_redis,
+        create_range_report_chain,
+        upsert_documents_to_redis_parallel,
+        normalize_doc
+    )
+
+    print("🔄 Membuat embedding model...")
+    embeddings = create_embeddings()
+
+    print("🔄 Membuat vectorstore Redis...")
+    vectorstore = create_redis_vectorstore(redis_url, index_name, embeddings)
+
+    print("🔄 Membuat LLM...")
+    llm = create_llm(
+        base_url=llm_base_url,
+        model=llm_model,
+        api_key="lm-studio",
+        temperature=0.1,
+    )
+    #print("DEBUG LLM:", llm)
+
+
+    print("📄 Membuat dokumen superdoc...")
+    docs = []
+
+    if os_info is not None:
+        docs.append(build_os_info_doc(os_info))
+
+    if all(x is not None for x in [os_info, os_memory, main_metric, aas, top_wait, top_sql]):
+        docs.extend(build_snapshot_superdocs_with_time(
+            os_info, os_memory, main_metric, aas, top_wait, top_sql
+        ))
+        docs.extend(build_hourly_superdocs(
+            os_info, os_memory, main_metric, aas, top_wait
+        ))
+    """ 
+    # ============================
+    # 🔍 SUPERDOC DEBUGGING PREVIEW
+    # ============================
+
+    print("\n================ SUPERDOC DEBUGGING PREVIEW ================\n")
+
+    # 1. Jumlah total dokumen
+    print(f"Total documents: {len(docs)}")
+
+    # 2. Hitung kategori dokumen
+    from collections import Counter
+    cat_count = Counter([d["metadata"].get("type", "unknown") for d in docs])
+    print("\nDocument count per category:")
+    for k, v in cat_count.items():
+        print(f" - {k}: {v}")
+
+    # 3. Preview 1 dokumen pertama
+    if docs:
+        d0 = docs[0]
+        print("\n---------------- PREVIEW: FIRST DOCUMENT ----------------")
+        print("Metadata:", d0["metadata"])
+        print("\nContent (first 500 chars):")
+        print(d0["content"][:500])
+        print(f"\nContent length: {len(d0['content'])} characters")
+
+    # 4. Preview 3 dokumen pertama
+    print("\n---------------- PREVIEW: FIRST 3 DOCUMENTS ----------------")
+    for i, d in enumerate(docs[:3]):
+        print(f"\n[Document {i}]")
+        print("Metadata:", d["metadata"])
+        print("Content preview:", d["content"][:200].replace("\n", " ") + "...")
+        print(f"Length: {len(d['content'])} chars")
+
+    # 5. Dokumen terpanjang
+    longest_doc = max(docs, key=lambda d: len(d["content"]))
+    print("\n---------------- PREVIEW: LONGEST DOCUMENT ----------------")
+    print("Metadata:", longest_doc["metadata"])
+    print(f"Length: {len(longest_doc['content'])} chars")
+    print("Preview:", longest_doc["content"][:500])
+
+    # 6. Estimasi token (kasar)
+    def estimate_tokens(text):
+        return int(len(text) / 4)  # rata-rata 1 token ≈ 4 chars
+
+    total_tokens = sum(estimate_tokens(d["content"]) for d in docs)
+    print(f"\nEstimated total tokens: {total_tokens:,}")
+
+    print("\n============================================================\n")
+    """
+
+    docs = [normalize_doc(d) for d in docs]
+
+    print("🔍 Validating documents...")
+
+    bad_docs = []
+    for i, d in enumerate(docs):
+        if not isinstance(d, dict):
+            bad_docs.append((i, type(d), "not a dict"))
+            continue
+        if "content" not in d:
+            bad_docs.append((i, d.keys(), "missing content"))
+        if "metadata" not in d:
+            bad_docs.append((i, d.keys(), "missing metadata"))
+
+    if bad_docs:
+        print("\n❌ Found invalid documents:")
+        for item in bad_docs[:10]:  # tampilkan 10 dulu
+            print(" - Index:", item[0], "| Keys:", item[1], "| Issue:", item[2])
+        raise ValueError("Document structure invalid. Fix required.")
+    else:
+        print("✅ All documents valid.")
+
+    for d in docs:
+        d["metadata"] = normalize_metadata(d["metadata"])
+    
+    #for d in docs[:20]:
+    #    print("DEBUG metadata:", d["metadata"])
+
+
+    # INGESTION WITH PROGRESS BAR
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")    
+    upsert_documents_to_redis(vectorstore, docs)
+    #upsert_documents_to_redis_parallel(
+    #vectorstore,
+    #docs,
+    #embeddings,
+    #workers=4,        # jumlah CPU worker
+    #batch_size=5     # batch kecil = lebih cepat
+    #)
+
+    # Auto SNAP range
+    #start_snap = int(main_metric["SNAP_ID"].min())
+    #end_snap = int(main_metric["SNAP_ID"].max())
+    snap_col = None
+    for c in ["SNAP_ID", "snap", "Snap", "snap_id"]:
+        if c in main_metric.columns:
+            snap_col = c
+            break
+
+    if snap_col is None:
+        raise ValueError(f"main_metric tidak memiliki kolom SNAP_ID atau snap. Kolom tersedia: {main_metric.columns.tolist()}")
+    start_snap = int(main_metric[snap_col].min())
+    end_snap = int(main_metric[snap_col].max())
+
+    print(f"📌 Auto SNAP range: {start_snap} → {end_snap}")
+
+    print("🤖 Menjalankan RAG range report...")
+    chain = create_range_report_chain(llm, vectorstore, start_snap, end_snap)
+    #report = chain.invoke(None)
+    query_text = (
+    f"Provide a detailed AWR performance analysis for SNAP_ID range "
+    f"{start_snap} to {end_snap}. Summarize CPU, wait events, AAS, I/O, "
+    f"Top SQL, and plan changes."
+    )
+
+    report = chain.invoke({"query": query_text})
+
+    final_report = f"""
+============================================================
+AWR RAG FULL REPORT
+SNAP_ID {start_snap} → {end_snap}
+============================================================
+
+{report}
+
+============================================================
+END OF REPORT
+============================================================
+"""
+
+    # SAVE TO FILE IF REQUESTED
+    if save_path:
+        # Jika save_path adalah folder → buat file default
+        if os.path.isdir(save_path):
+            save_path = os.path.join(save_path, "report.txt")
+
+        # Jika folder belum ada → buat otomatis
+        folder = os.path.dirname(save_path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.write(final_report)
+
+        print(f"💾 Report saved to: {save_path}")
+
+    print("\n================= REPORT OUTPUT =================\n")
+    print(final_report)
+    print("\n=================================================\n")
+
+    # Jangan return report (supaya tidak muncul None)
+    return
+
+
 
 def find_blocks(lines: List[str]) -> List[Tuple[str, int, int]]:
     """Return list of (section_name, begin_idx, end_idx) in lines.
@@ -280,6 +519,7 @@ def main():
               help='Generate RAG report for the entire file (auto min/max SNAP_ID) (after ingestion)')
     p.add_argument('--rag-run-all', action='store_true',
               help='Parse → ingest → generate full-range RAG report in one execution')
+    p.add_argument('--save', default='out_sections', help='Save RAG output to a text file')
     args = p.parse_args()
     pd.set_option('future.no_silent_downcasting', True)
     # Accept either a full/relative path or a filename. Expand user and
@@ -479,6 +719,26 @@ def main():
         print(report)
         return
     # end RAG report all
+
+    # ======RAG RUN ALL (Parse → Ingest → Report ALL)
+    if args.rag_run_all:
+        print("🚀 Menjalankan full pipeline RAG (parse → ingest → report all)...")
+    
+        save_path = args.save if args.save else None
+    
+        report = rag_run_all(
+            os_info=os_info,
+            os_memory=os_memory,
+            main_metric=main_metric,
+            aas=aas,
+            top_wait=top_wait,
+            top_sql=top_sql,
+            save_path=save_path,
+        )
+    
+        print(report)
+        return
+    # end RAG RUN ALL
     
     # ======Excel export (if requested)
     if args.excel:

@@ -1,0 +1,76 @@
+
+============================================================
+AWR RAG FULL REPORT
+SNAP_ID 3367 → 3564
+============================================================
+
+**Laporan Performa Database**
+
+**Ringkasan Eksekutif**
+
+Rentang snapshot yang dianalisis mencakup dari SNAP_ID 3367 sampai 3564, dengan total waktu sekitar 2 jam. Hasil analisis menunjukkan bahwa database mengalami bottleneck pada CPU dan I/O.
+
+**CPU Trend Analysis**
+
+* CPU usage rata-rata: 10-20%
+* CPU ratio DB: 40-60% (lebih tinggi dari CPU ratio OS)
+* CPU wait ratio: 50-70% (lebih tinggi dari CPU ratio DB)
+
+Hasil analisis menunjukkan bahwa database mengalami bottleneck pada CPU, dengan CPU usage rata-rata yang lebih tinggi daripada CPU ratio OS. Hal ini dapat disebabkan oleh kekurangan sumber daya komputasi atau kebijakan pengaturan CPU yang tidak tepat.
+
+**Wait Event Trend Analysis**
+
+* Latch: parallel query alloc buffer (lebih dari 50% dari total waktu tunggu)
+* Latch: shared pool (lebih dari 20% dari total waktu tunggu)
+* Cursor: pin S wait on X (lebih dari 10% dari total waktu tunggu)
+
+Hasil analisis menunjukkan bahwa database mengalami bottleneck pada latch dan cursor. Hal ini dapat disebabkan oleh kekurangan sumber daya memori atau kebijakan pengaturan latch yang tidak tepat.
+
+**AAS Trend Analysis**
+
+* AAS rata-rata: 100-200
+* AAS maksimum: 500
+
+Hasil analisis menunjukkan bahwa database mengalami bottleneck pada AAS, dengan AAS rata-rata dan maksimum yang lebih tinggi daripada standar. Hal ini dapat disebabkan oleh kekurangan sumber daya komputasi atau kebijakan pengaturan AAS yang tidak tepat.
+
+**I/O Trend Analysis**
+
+* Physical read (GB): 1-5 GB
+* Direct write (GB): 0-1 GB
+
+Hasil analisis menunjukkan bahwa database mengalami bottleneck pada I/O, dengan physical read dan direct write yang lebih tinggi daripada standar. Hal ini dapat disebabkan oleh kekurangan sumber daya penyimpanan atau kebijakan pengaturan I/O yang tidak tepat.
+
+**RAC Trend Analysis**
+
+* RAC rata-rata: 50-100
+* RAC maksimum: 200
+
+Hasil analisis menunjukkan bahwa database mengalami bottleneck pada RAC, dengan RAC rata-rata dan maksimum yang lebih tinggi daripada standar. Hal ini dapat disebabkan oleh kekurangan sumber daya komputasi atau kebijakan pengaturan RAC yang tidak tepat.
+
+**Root Cause Analysis**
+
+Berdasarkan hasil analisis, root cause dari bottleneck database adalah:
+
+* Kekurangan sumber daya komputasi
+* Kekurangan sumber daya memori
+* Kebijakan pengaturan CPU yang tidak tepat
+* Kebijakan pengaturan latch yang tidak tepat
+* Kebijakan pengaturan AAS yang tidak tepat
+* Kebijakan pengaturan I/O yang tidak tepat
+
+**Rekomendasi Tuning**
+
+Berdasarkan hasil analisis, rekomendasi tuning untuk meningkatkan performa database adalah:
+
+* Menambah sumber daya komputasi
+* Meningkatkan sumber daya memori
+* Mengubah kebijakan pengaturan CPU
+* Mengubah kebijakan pengaturan latch
+* Mengubah kebijakan pengaturan AAS
+* Mengubah kebijakan pengaturan I/O
+
+Dengan melakukan tuning yang tepat, diharapkan performa database dapat meningkat dan bottleneck dapat dihilangkan.
+
+============================================================
+END OF REPORT
+============================================================

@@ -10,3 +10,6 @@ langchain-openai>=0.1.0
 openai>=1.0.0
 tiktoken>=0.6.0
 python-dotenv>=1.0.0
+einops
+sentence-transformers
+tqdm

@@ -9,7 +9,8 @@ RAG pipeline for Oracle AWR Miner:
 - SQL plan change detection
 - SQL bottleneck classifier
 - Redis VectorStore integration
-- RAG chains for LM Studio (OpenAI-compatible)
+- RAG chains for LM Studio (OpenAI-compatible) for LLM
+- HuggingFaceEmbeddings (nomic-ai/nomic-embed-text-v1) for embeddings
 
 Author: Irvansyah (Cunkrink) + Copilot
 """
@@ -17,14 +18,77 @@ Author: Irvansyah (Cunkrink) + Copilot
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 import pandas as pd
-
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
+from langchain_redis import RedisVectorStore
 from langchain_community.vectorstores import Redis
+#from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 
+from tqdm import tqdm
+import torch
+import requests
+
+from langchain_core.embeddings import Embeddings
+import requests
+
+class LMStudioEmbedding(Embeddings):
+    def __init__(self, url="http://localhost:1235/v1/embeddings", model="text-embedding-bge-base-en-v1.5"):
+        self.url = url
+        self.model = model
+
+    def embed_documents(self, texts):
+        sanitized = []
+        for t in texts:
+            if isinstance(t, dict):
+                t = t.get("content") or t.get("text") or str(t)
+            if t is None:
+                t = ""
+            sanitized.append(str(t))
+
+        payload = {"model": self.model, "input": sanitized}
+        r = requests.post(self.url, json=payload)
+        r.raise_for_status()
+        data = r.json()
+        return [item["embedding"] for item in data["data"]]
+
+    def embed_query(self, text):
+        # --- FIX: jika input dict, ambil field "query" ---
+        if isinstance(text, dict):
+            if "query" in text:
+                text = text["query"]
+            else:
+                text = str(text)
+
+        if text is None:
+            text = ""
+
+        text = str(text)
+
+        payload = {"model": self.model, "input": [text]}
+        r = requests.post(self.url, json=payload)
+        r.raise_for_status()
+        return r.json()["data"][0]["embedding"]
+
+
+BASE_SYSTEM_PROMPT = """
+Anda adalah Senior Database Performance Engineer & DBA Specialist.
+Gunakan konteks yang diberikan untuk menjelaskan tren, bottleneck,
+dan rekomendasi tuning secara teknis dan akurat.
+
+PEDOMAN ANALISIS:
+- Hubungan Metrik: Jika CPU tinggi, periksa apakah berkaitan dengan 'Slow Queries' atau 'High Connections'. Jika Latency tinggi tapi CPU rendah, periksa 'Disk I/O' atau 'Network Wait'.
+- Batas Ambang (Threshold): Anggap CPU > 80% sebagai peringatan, dan > 90% sebagai kritis. Buffer Cache Hit Ratio di bawah 90% mengindikasikan masalah memori.
+- Fokus pada Solusi: Jangan hanya menyebutkan angka, jelaskan *mengapa* angka itu bermasalah dan *apa* perintah SQL atau tindakan yang harus diambil.
+
+GAYA BAHASA:
+- Profesional, teknis, dan langsung ke poin (concise).
+- Gunakan istilah teknis seperti: Index Scan, Sequential Scan, Deadlock, Connection Pooling, I/O Wait, dan Cache Hit Ratio
+
+"""
 
 # ============================================================
 # GLOBAL SANITIZER
@@ -46,17 +110,18 @@ def sanitize_numeric(df: pd.DataFrame, numeric_cols: List[str]) -> pd.DataFrame:
 
 
 # ============================================================
-# 1. LLM & Embeddings (LM Studio)
+# 1. LLM & Embeddings
 # ============================================================
 
 def create_llm(
-    base_url: str = "http://localhost:1234/v1",
-    model: str = "lmstudio-oracle-dba",
+    base_url: str = "http://localhost:1235/v1",
+    model: str = "meta-llama-3.1-8b-instruct",
     api_key: str = "lm-studio",
     temperature: float = 0.1,
 ) -> ChatOpenAI:
     """
-    Create LM Studio LLM instance (OpenAI-compatible).
+    Create LLM instance (e.g. LM Studio / OpenAI-compatible endpoint).
+    This is used only for generation / reasoning, NOT embeddings.
     """
     return ChatOpenAI(
         model=model,
@@ -66,38 +131,55 @@ def create_llm(
     )
 
 
-def create_embeddings(
-    base_url: str = "http://localhost:1234/v1",
-    model: str = "lmstudio-embedding",
-    api_key: str = "lm-studio",
-) -> OpenAIEmbeddings:
+def create_embeddings():
     """
-    Embedding model for vectorstore.
+    Premium embedding model for vectorstore.
+    Using HuggingFace local embeddings (no LM Studio needed).
+
+    Model: nomic-ai/nomic-embed-text-v1
+    - Sangat cocok untuk dokumen teknis panjang (AWR super-docs).
+    - Akurat untuk semantic search di konteks RAG.
     """
-    return OpenAIEmbeddings(
-        base_url=base_url,
-        api_key=api_key,
-        model=model,
-    )
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #print(f"Using device for embeddings: {device}")
+    #return HuggingFaceEmbeddings(
+    #    model_name="nomic-ai/nomic-embed-text-v1",
+    #    model_kwargs={
+    #        #"device": "cpu", # gunakan GPU jika ada; ganti ke "cpu" jika perlu
+    #        "device": device,
+    #        "trust_remote_code": True
+    #    },
+    #    encode_kwargs={"normalize_embeddings": True},
+    #)
+    print("🔄 Using LM Studio Embedding Server (bge-base @ 1235)")
+    return LMStudioEmbedding(
+         url="http://localhost:1235/v1/embeddings",
+         model="text-embedding-bge-base-en-v1.5"
+     )
 
 
 # ============================================================
 # 2. VectorStore Redis
 # ============================================================
 
-def create_redis_vectorstore(
-    redis_url: str,
-    index_name: str,
-    embeddings: OpenAIEmbeddings,
-) -> Redis:
-    """
-    Initialize Redis VectorStore.
-    """
-    return Redis(
+from langchain_redis import RedisVectorStore
+
+#def create_redis_vectorstore(redis_url: str, index_name: str, embeddings):
+#    return RedisVectorStore(
+#        embeddings=embeddings,
+#        redis_url=redis_url,
+#        index_name=index_name,
+#    )
+def create_redis_vectorstore(redis_url: str, index_name: str, embeddings):
+    return RedisVectorStore(
+        embeddings=embeddings,
         redis_url=redis_url,
         index_name=index_name,
-        embedding=embeddings,
     )
+
+
+
+
 
 
 # ============================================================
@@ -385,8 +467,11 @@ def build_snapshot_superdocs_with_time(
             mm.rename(columns={old: new}, inplace=True)
 
     if not pd.api.types.is_datetime64_any_dtype(mm["end"]):
-        mm["end"] = pd.to_datetime(mm["end"], errors="coerce")
-
+        mm["end"] = pd.to_datetime(
+            mm["end"],
+            format="%Y-%m-%d %H:%M:%S",
+            errors="coerce"
+        )   
     for snap_id in sorted(mm["snap"].unique()):
         mm_df = mm[mm["snap"] == snap_id]
 
@@ -593,7 +678,12 @@ def build_hourly_superdocs(
             mm.rename(columns={old: new}, inplace=True)
 
     if not pd.api.types.is_datetime64_any_dtype(mm["end"]):
-        mm["end"] = pd.to_datetime(mm["end"], errors="coerce")
+        mm["end"] = pd.to_datetime(
+            mm["end"],
+            format="%Y-%m-%d %H:%M:%S",
+            errors="coerce"
+        )
+
 
     for hour in sorted(mm["end"].dt.hour.unique()):
         mm_hour = mm[mm["end"].dt.hour == hour]
@@ -999,79 +1089,248 @@ def summarize_bottleneck_classes_text(
 # 5. Documents → LangChain Documents & Redis Upsert
 # ============================================================
 
-def docs_to_langchain_documents(docs: List[Dict[str, Any]]) -> List[Document]:
-    """
-    Convert list[{text, metadata}] to LangChain Document objects.
-    """
-    return [Document(page_content=d["text"], metadata=d["metadata"]) for d in docs]
+def docs_to_langchain_documents(docs):
+    lc_docs = []
+    for d in docs:
+        # Jika sudah Document, langsung pakai
+        if isinstance(d, Document):
+            lc_docs.append(d)
+            continue
+
+        # Format dict yang sudah dinormalisasi
+        lc_docs.append(
+            Document(
+                page_content=d["content"],
+                metadata=d["metadata"]
+            )
+        )
+    return lc_docs
 
 
-def upsert_documents_to_redis(
-    vectorstore: Redis,
-    docs: List[Dict[str, Any]],
-    batch_size: int = 100,
-) -> None:
-    """
-    Upsert documents into Redis VectorStore in batches.
-    """
-    if not docs:
-        return
+
+
+#def docs_to_langchain_documents(docs: List[Dict[str, Any]]) -> List[Document]:
+#    """
+#    Convert list[{text, metadata}] to LangChain Document objects.
+#    """
+#    return [Document(page_content=d["text"], metadata=d["metadata"]) for d in docs]
+
+
+def upsert_documents_to_redis(vectorstore, docs, batch_size=10):
+    from tqdm import tqdm
 
     lc_docs = docs_to_langchain_documents(docs)
-    for i in range(0, len(lc_docs), batch_size):
-        batch = lc_docs[i : i + batch_size]
+
+    print(f"📥 Ingesting {len(lc_docs)} documents into Redis...")
+
+    for i in tqdm(range(0, len(lc_docs), batch_size), desc="Ingesting"):
+        batch = lc_docs[i:i+batch_size]
         vectorstore.add_documents(batch)
+
+from concurrent.futures import ProcessPoolExecutor
+from langchain_core.documents import Document
+
+def embed_batch(embeddings, docs):
+    """Embed a batch of documents (runs in parallel)."""
+    texts = [d.page_content for d in docs]
+    metas = [d.metadata for d in docs]
+    vectors = embeddings.embed_documents(texts)
+    return list(zip(vectors, metas, texts))
+
+
+def upsert_documents_to_redis_parallel(vectorstore, docs, embeddings, workers=4, batch_size=20):
+    from tqdm import tqdm
+
+    # Pastikan docs sudah berupa Document
+    lc_docs = []
+    for d in docs:
+        if isinstance(d, Document):
+            lc_docs.append(d)
+        else:
+            lc_docs.append(Document(page_content=d["content"], metadata=d["metadata"]))
+
+    print(f"📥 Parallel ingest: {len(lc_docs)} documents, {workers} workers, batch={batch_size}")
+
+    # Bagi dokumen menjadi batch kecil
+    batches = [lc_docs[i:i+batch_size] for i in range(0, len(lc_docs), batch_size)]
+
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = []
+        for batch in batches:
+            futures.append(executor.submit(embed_batch, embeddings, batch))
+
+        for fut in tqdm(futures, desc="Parallel embedding"):
+            vectors = fut.result()
+            # Insert ke Redis
+            for vec, meta, text in vectors:
+                vectorstore.add_texts([text], metadatas=[meta])
+
+def normalize_doc(d):
+    # Jika sudah Document, biarkan
+    if isinstance(d, Document):
+        return d
+
+    # Jika pakai key 'text', ubah ke 'content'
+    if "text" in d:
+        return {
+            "content": d["text"],
+            "metadata": d.get("metadata", {})
+        }
+
+    # Jika pakai key 'page_content', ubah ke 'content'
+    if "page_content" in d:
+        return {
+            "content": d["page_content"],
+            "metadata": d.get("metadata", {})
+        }
+
+    # Jika sudah benar
+    if "content" in d:
+        return d
+
+    # Jika tidak dikenal
+    raise ValueError(f"Unknown document format: {d}")
 
 
 # ============================================================
 # 6. RAG Prompts & Chains
 # ============================================================
 
-def format_docs(docs: List[Document]) -> str:
+def format_docs(docs):
     """
-    Join multiple documents into a single context string.
+    Gabungkan dokumen untuk dijadikan context LLM,
+    sambil membatasi panjang tiap dokumen agar tidak meledak.
     """
-    return "\n\n---\n\n".join(d.page_content for d in docs)
+    MAX_CHARS_PER_DOC = 5000  # ~1250 token per dokumen (kasar)
 
+    parts = []
+    for i, d in enumerate(docs, start=1):
+        text = d.page_content if hasattr(d, "page_content") else d.get("content", "")
+        if len(text) > MAX_CHARS_PER_DOC:
+            text = text[:MAX_CHARS_PER_DOC] + "\n...[TRUNCATED]..."
+        parts.append(f"[DOC {i}]\n{text}")
+    return "\n\n".join(parts)
 
-BASE_SYSTEM_PROMPT = """
-Anda adalah Oracle Database Performance Expert dengan pengalaman lebih dari 15 tahun.
-Anda menganalisis AWR, ASH, AWR Miner, dan RAC untuk sistem berskala besar.
-
-Gunakan HANYA konteks yang diberikan.
-JANGAN membuat metrik atau data baru yang tidak ada di konteks.
-
-Fokus pada:
-- Identifikasi bottleneck
-- Root cause analysis
-- Rekomendasi tuning yang spesifik dan actionable
-"""
-
-
-def create_qa_rag_chain(llm: ChatOpenAI, vectorstore: Redis):
+def compress_docs(docs, max_docs=8, max_chars_per_doc=5000, max_total_chars=40000):
     """
-    RAG chain untuk tanya-jawab bebas seputar performa database.
-    Menggunakan semua dokumen dalam Redis.
+    Kompres dokumen tanpa modul LangChain tambahan.
+    - Ambil dokumen paling relevan (yang pendek dulu)
+    - Potong dokumen panjang
+    - Batasi total context
     """
-    retriever = vectorstore.as_retriever(
+    # Urutkan dokumen berdasarkan panjang (pendek lebih relevan)
+    docs_sorted = sorted(docs, key=lambda d: len(d.page_content))
+
+    out = []
+    total = 0
+
+    for d in docs_sorted[:max_docs]:
+        text = d.page_content
+
+        # Potong per dokumen
+        if len(text) > max_chars_per_doc:
+            text = text[:max_chars_per_doc] + "\n...[TRUNCATED]..."
+
+        # Batasi total context
+        if total + len(text) > max_total_chars:
+            remaining = max_total_chars - total
+            if remaining <= 0:
+                break
+            text = text[:remaining] + "\n...[GLOBAL TRUNCATION]..."
+
+        out.append(text)
+        total += len(text)
+
+    return "\n\n".join(out)
+
+
+def compress_docs(docs, max_docs=8, max_chars_per_doc=5000, max_total_chars=40000):
+    """
+    Kompres dokumen tanpa modul LangChain tambahan.
+    - Ambil dokumen paling relevan (yang pendek dulu)
+    - Potong dokumen panjang
+    - Batasi total context
+    """
+    docs_sorted = sorted(docs, key=lambda d: len(d.page_content))
+
+    out = []
+    total = 0
+
+    for d in docs_sorted[:max_docs]:
+        text = d.page_content
+
+        if len(text) > max_chars_per_doc:
+            text = text[:max_chars_per_doc] + "\n...[TRUNCATED]..."
+
+        if total + len(text) > max_total_chars:
+            remaining = max_total_chars - total
+            if remaining <= 0:
+                break
+            text = text[:remaining] + "\n...[GLOBAL TRUNCATION]..."
+
+        out.append(text)
+        total += len(text)
+
+    return "\n\n".join(out)
+
+def create_range_report_chain(
+    llm: ChatOpenAI,
+    vectorstore: Redis,
+    start_snap: int,
+    end_snap: int,
+):
+    # Base retriever
+    base_retriever = vectorstore.as_retriever(
         search_type="similarity",
-        search_kwargs={"k": 6},
+        search_kwargs={"k": 20},
     )
+
+    # Custom context builder
+    def get_context(_):
+        docs = base_retriever.get_relevant_documents(
+            f"AWR performance analysis for SNAP_ID {start_snap} to {end_snap}"
+        )
+        return compress_docs(docs)
+
+    system_prompt = """
+Anda adalah asisten AI untuk analisis performa Oracle AWR.
+Gunakan konteks yang diberikan untuk menjelaskan tren, bottleneck,
+dan rekomendasi tuning secara teknis dan akurat.
+
+Tugas khusus Anda:
+- Analisa performa database dalam rentang snapshot yang besar.
+- Identifikasi tren CPU, wait event, AAS, I/O, dan RAC.
+- Temukan bottleneck utama dan root cause untuk periode tersebut.
+- Berikan rekomendasi tuning yang relevan untuk jangka waktu itu.
+
+Gunakan struktur:
+1. Executive Summary
+2. CPU Trend Analysis
+3. Wait Event Trend Analysis
+4. AAS Trend Analysis
+5. I/O Trend Analysis
+6. RAC Trend Analysis
+7. Root Cause Analysis
+8. Rekomendasi Tuning
+"""
 
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", BASE_SYSTEM_PROMPT),
+            ("system", system_prompt),
             (
                 "human",
-                "Konteks AWR:\n\n{context}\n\nPertanyaan:\n{question}",
+                "Konteks AWR untuk SNAP_ID {start_snap} sampai {end_snap}:\n\n"
+                "{context}\n\n"
+                "Buatkan laporan performa lengkap untuk rentang snapshot ini.",
             ),
         ]
     )
 
     chain = (
         {
-            "context": retriever | format_docs,
-            "question": RunnablePassthrough(),
+            "context": get_context,
+            "start_snap": lambda _: start_snap,
+            "end_snap": lambda _: end_snap,
         }
         | prompt
         | llm
@@ -1157,13 +1416,13 @@ def create_range_report_chain(
     RAG chain untuk laporan performa range SNAP_ID besar.
     Menggunakan snapshot_superdoc + hourly_superdoc (jika ada).
     """
+
+    # ❗ FIX: Hapus filter dict yang bikin RedisVL error
     retriever = vectorstore.as_retriever(
         search_type="similarity",
         search_kwargs={
             "k": 20,
-            "filter": {
-                "snap_id": {"$gte": start_snap, "$lte": end_snap},
-            },
+            "filter": None,   # ← WAJIB None
         },
     )
 
@@ -1213,3 +1472,109 @@ Gunakan struktur:
     )
 
     return chain
+
+def rag_run_all(
+        awr_data: dict,
+        redis_url: str,
+        index_name: str,
+        start_snap: int,
+        end_snap: int,
+        llm_base_url: str = "http://localhost:1235/v1",
+        llm_model: str = "meta-llama-3.1-8b-instruct",
+    ):
+        """
+        Full pipeline:
+        1. Build all documents (snapshot superdoc, hourly superdoc, OS info)
+        2. Ingest into Redis
+        3. Run RAG snapshot report
+        4. Run RAG range report
+        """
+    
+        print("🔄 Membuat embedding model...")
+        embeddings = create_embeddings()
+    
+        print("🔄 Membuat vectorstore Redis...")
+        vectorstore = create_redis_vectorstore(
+            redis_url=redis_url,
+            index_name=index_name,
+            embeddings=embeddings,
+        )
+    
+        print("🔄 Membuat LLM...")
+        llm = create_llm(
+            base_url=llm_base_url,
+            model=llm_model,
+            api_key="lm-studio",
+            temperature=0.1,
+        )
+    
+        print("📄 Membuat dokumen superdoc...")
+        docs = []
+    
+        # OS Info
+        docs.append(build_os_info_doc(awr_data["OS-INFORMATION"]))
+    
+        # Snapshot superdocs
+        snapshot_docs = build_snapshot_superdocs_with_time(
+            awr_data["OS-INFORMATION"],
+            awr_data["MEMORY"],
+            awr_data["MAIN-METRICS"],
+            awr_data["AVERAGE-ACTIVE-SESSIONS"],
+            awr_data["TOP-N-TIMED-EVENTS"],
+            awr_data["TOP-SQL-BY-SNAPID"],
+        )
+        docs.extend(snapshot_docs)
+    
+        # Hourly superdocs
+        hourly_docs = build_hourly_superdocs(
+            awr_data["OS-INFORMATION"],
+            awr_data["MEMORY"],
+            awr_data["MAIN-METRICS"],
+            awr_data["AVERAGE-ACTIVE-SESSIONS"],
+            awr_data["TOP-N-TIMED-EVENTS"],
+        )
+        docs.extend(hourly_docs)
+    
+        print(f"📥 Meng‑ingest {len(docs)} dokumen ke Redis...")
+        upsert_documents_to_redis(vectorstore, docs)
+    
+        print("🤖 Menjalankan RAG snapshot report...")
+        snapshot_chain = create_snapshot_report_chain(
+            llm=llm,
+            vectorstore=vectorstore,
+            snap_id=start_snap,
+        )
+        snapshot_report = snapshot_chain.invoke(start_snap)
+    
+        print("🤖 Menjalankan RAG range report...")
+        range_chain = create_range_report_chain(
+            llm=llm,
+            vectorstore=vectorstore,
+            start_snap=start_snap,
+            end_snap=end_snap,
+        )
+        range_report = range_chain.invoke(None)
+    
+        print("✅ Selesai. Menggabungkan laporan...")
+    
+        final_report = f"""
+    ============================================================
+    AWR RAG FULL REPORT
+    SNAP_ID {start_snap} → {end_snap}
+    ============================================================
+    
+    1. Snapshot Report (SNAP_ID {start_snap})
+    ------------------------------------------------------------
+    {snapshot_report}
+    
+    2. Range Performance Report ({start_snap} → {end_snap})
+    ------------------------------------------------------------
+    {range_report}
+    
+    ============================================================
+    END OF REPORT
+    ============================================================
+    """
+    
+        return final_report
+
