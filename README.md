@@ -2,6 +2,32 @@
   <img src="logo.svg" width="260">
 </p>
 
+<p align="center">
+  <svg width="260" height="260" viewBox="0 0 260 260" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer Oracle Red Circle -->
+  <circle cx="130" cy="130" r="120" fill="#D32F2F" stroke="#8B1E1E" stroke-width="6"/>
+
+  <!-- Database Cylinder -->
+  <ellipse cx="130" cy="110" rx="40" ry="16" fill="#FFFFFF" opacity="0.95"/>
+  <rect x="90" y="110" width="80" height="60" fill="#FFFFFF" opacity="0.95"/>
+  <ellipse cx="130" cy="170" rx="40" ry="16" fill="#FFFFFF" opacity="0.95"/>
+
+  <!-- Magnifying Glass -->
+  <circle cx="165" cy="165" r="32" fill="none" stroke="#000000" stroke-width="6"/>
+  <line x1="185" y1="185" x2="210" y2="210" stroke="#000000" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Performance Trend Line -->
+  <polyline points="105,155 120,140 135,150 150,130 165,140"
+            fill="none" stroke="#D32F2F" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Text -->
+  <text x="130" y="245" font-family="Segoe UI, sans-serif" font-size="22"
+        fill="#FFFFFF" text-anchor="middle">
+    AWR RAG Analyzer
+  </text>
+</svg>
+</p>
+
 # 📘 AWR Miner RAG Analyzer
 AWR Miner RAG Analyzer adalah tool modern untuk menganalisis performa Oracle Database menggunakan pendekatan Retrieval-Augmented Generation (RAG).
 Program ini menggabungkan:
