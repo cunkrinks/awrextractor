@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg">
+  <img src="awr_rag_analyzer_no_text_logo.png">
 </p>
 
 
