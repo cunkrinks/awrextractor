@@ -469,7 +469,7 @@ def build_snapshot_superdocs_with_time(
     if not pd.api.types.is_datetime64_any_dtype(mm["end"]):
         mm["end"] = pd.to_datetime(
             mm["end"],
-            format="%Y-%m-%d %H:%M:%S",
+            format="%y/%m/%d %H:%M",  # contoh: 20/09/02 02:59
             errors="coerce"
         )   
     for snap_id in sorted(mm["snap"].unique()):
@@ -480,6 +480,10 @@ def build_snapshot_superdocs_with_time(
             end_time = row["end"]
             duration_min = float(row["dur_m"])
             start_time = end_time - pd.Timedelta(minutes=duration_min)
+            # Format timestamp agar konsisten
+            start_fmt = start_time.strftime("%Y-%m-%d %H:%M")
+            end_fmt = end_time.strftime("%Y-%m-%d %H:%M")
+            
 
             # Memory
             mem_df = os_memory[
@@ -532,8 +536,8 @@ Instance: {instance}
 Platform: {platform}
 
 SNAP_ID: {snap_id}
-Start Time: {start_time}
-End Time: {end_time}
+Start Time: {start_fmt}
+End Time: {end_fmt}
 Duration: {duration_min} minutes
 
 ============================================================
@@ -680,7 +684,7 @@ def build_hourly_superdocs(
     if not pd.api.types.is_datetime64_any_dtype(mm["end"]):
         mm["end"] = pd.to_datetime(
             mm["end"],
-            format="%Y-%m-%d %H:%M:%S",
+            format="%y/%m/%d %H:%M",
             errors="coerce"
         )
 
@@ -1273,72 +1277,6 @@ def compress_docs(docs, max_docs=8, max_chars_per_doc=5000, max_total_chars=4000
 
     return "\n\n".join(out)
 
-def create_range_report_chain(
-    llm: ChatOpenAI,
-    vectorstore: Redis,
-    start_snap: int,
-    end_snap: int,
-):
-    # Base retriever
-    base_retriever = vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 20},
-    )
-
-    # Custom context builder
-    def get_context(_):
-        docs = base_retriever.get_relevant_documents(
-            f"AWR performance analysis for SNAP_ID {start_snap} to {end_snap}"
-        )
-        return compress_docs(docs)
-
-    system_prompt = """
-Anda adalah asisten AI untuk analisis performa Oracle AWR.
-Gunakan konteks yang diberikan untuk menjelaskan tren, bottleneck,
-dan rekomendasi tuning secara teknis dan akurat.
-
-Tugas khusus Anda:
-- Analisa performa database dalam rentang snapshot yang besar.
-- Identifikasi tren CPU, wait event, AAS, I/O, dan RAC.
-- Temukan bottleneck utama dan root cause untuk periode tersebut.
-- Berikan rekomendasi tuning yang relevan untuk jangka waktu itu.
-
-Gunakan struktur:
-1. Executive Summary
-2. CPU Trend Analysis
-3. Wait Event Trend Analysis
-4. AAS Trend Analysis
-5. I/O Trend Analysis
-6. RAC Trend Analysis
-7. Root Cause Analysis
-8. Rekomendasi Tuning
-"""
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_prompt),
-            (
-                "human",
-                "Konteks AWR untuk SNAP_ID {start_snap} sampai {end_snap}:\n\n"
-                "{context}\n\n"
-                "Buatkan laporan performa lengkap untuk rentang snapshot ini.",
-            ),
-        ]
-    )
-
-    chain = (
-        {
-            "context": get_context,
-            "start_snap": lambda _: start_snap,
-            "end_snap": lambda _: end_snap,
-        }
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
-
-    return chain
-
 
 def create_snapshot_report_chain(
     llm: ChatOpenAI,
@@ -1404,48 +1342,31 @@ Tugas khusus Anda:
     )
 
     return chain
-
-
+from awr_engine.prompting import build_prompt
 def create_range_report_chain(
-    llm: ChatOpenAI,
-    vectorstore: Redis,
-    start_snap: int,
-    end_snap: int,
+    llm,
+    vectorstore,
+    start_snap,
+    end_snap,
+    analysis_level="technical",
+    recommendation_level="medium",
+    language="id",
+    style="hybrid",
 ):
-    """
-    RAG chain untuk laporan performa range SNAP_ID besar.
-    Menggunakan snapshot_superdoc + hourly_superdoc (jika ada).
-    """
+    system_prompt = build_prompt(
+        analysis_level=analysis_level,
+        recommendation_level=recommendation_level,
+        language=language,
+        style=style,
+    )
 
-    # ❗ FIX: Hapus filter dict yang bikin RedisVL error
+     # ❗ FIX: Hapus filter dict yang bikin RedisVL error
     retriever = vectorstore.as_retriever(
         search_type="similarity",
         search_kwargs={
             "k": 20,
             "filter": None,   # ← WAJIB None
         },
-    )
-
-    system_prompt = (
-        BASE_SYSTEM_PROMPT
-        + """
-
-Tugas khusus Anda:
-- Analisa performa database dalam rentang snapshot yang besar.
-- Identifikasi tren CPU, wait event, AAS, I/O, dan RAC.
-- Temukan bottleneck utama dan root cause untuk periode tersebut.
-- Berikan rekomendasi tuning yang relevan untuk jangka waktu itu.
-
-Gunakan struktur:
-1. Executive Summary
-2. CPU Trend Analysis
-3. Wait Event Trend Analysis
-4. AAS Trend Analysis
-5. I/O Trend Analysis
-6. RAC Trend Analysis
-7. Root Cause Analysis
-8. Rekomendasi Tuning
-"""
     )
 
     prompt = ChatPromptTemplate.from_messages(

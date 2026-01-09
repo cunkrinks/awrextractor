@@ -52,6 +52,7 @@ todo:
 ======================================================================================================
 """
 
+from email import parser
 from itertools import chain
 import re
 import os
@@ -98,6 +99,10 @@ def rag_run_all(
     llm_base_url="http://localhost:1235/v1",
     llm_model="meta-llama-3.1-8b-instruct",
     save_path=None,
+    analysis_level="technical",
+    recommendation_level="medium",
+    language="id",
+    style="hybrid",
 ):
     """
     Full pipeline:
@@ -258,8 +263,57 @@ def rag_run_all(
     print(f"📌 Auto SNAP range: {start_snap} → {end_snap}")
 
     print("🤖 Menjalankan RAG range report...")
-    chain = create_range_report_chain(llm, vectorstore, start_snap, end_snap)
+    chain = create_range_report_chain(
+        llm,
+        vectorstore,
+        start_snap,
+        end_snap,
+        analysis_level=analysis_level,
+        recommendation_level=recommendation_level,
+        language=language,
+        style=style,
+    )
     #report = chain.invoke(None)
+    # ============================
+    # 🔧 HEADER LAPORAN DENGAN TIMESTAMP
+    # ============================
+
+    start_time = main_metric["start"].min()
+    end_time = main_metric["end"].max()
+    # ============================
+    # 🔧 ENVIRONMENT SUMMARY (OS-INFORMATION)
+    # ============================
+    env = {}
+    if os_info is not None:
+        for _, row in os_info.iterrows():
+            env[row["STAT_NAME"]] = row["STAT_VALUE"]
+
+    db_name = env.get("DB_NAME", "Unknown")
+    dbid = env.get("DBID", "Unknown")
+    platform = env.get("!PLATFORM_NAME", "Unknown")
+    version = env.get("VERSION", "Unknown")
+    num_cpus = env.get("NUM_CPUS", "Unknown")
+    num_cpu_cores = env.get("NUM_CPU_CORES", "Unknown")
+    num_cpu_sockets = env.get("NUM_CPU_SOCKETS", "Unknown")
+    physical_mem = env.get("PHYSICAL_MEMORY_GB", "Unknown")
+    instances = env.get("INSTANCES", "Unknown")
+
+    header_text = f"""
+============================================================
+AWR PERFORMANCE REPORT
+Database: {db_name} (DBID {dbid})
+Platform: {platform}
+Oracle Version: {version}
+CPU: {num_cpu_cores} cores / {num_cpus} threads / {num_cpu_sockets} sockets
+Memory: {physical_mem} GB
+Instances: {instances}
+
+Waktu: {start_time} → {end_time}
+SNAP_ID: {start_snap} → {end_snap}
+============================================================
+
+    """
+    #print(header_text)
     query_text = (
     f"Provide a detailed AWR performance analysis for SNAP_ID range "
     f"{start_snap} to {end_snap}. Summarize CPU, wait events, AAS, I/O, "
@@ -269,10 +323,8 @@ def rag_run_all(
     report = chain.invoke({"query": query_text})
 
     final_report = f"""
-============================================================
-AWR RAG FULL REPORT
-SNAP_ID {start_snap} → {end_snap}
-============================================================
+
+{header_text}
 
 {report}
 
@@ -281,13 +333,40 @@ END OF REPORT
 ============================================================
 """
 
-    # SAVE TO FILE IF REQUESTED
-    if save_path:
-        # Jika save_path adalah folder → buat file default
-        if os.path.isdir(save_path):
-            save_path = os.path.join(save_path, "report.txt")
 
-        # Jika folder belum ada → buat otomatis
+
+    # SAVE TO FILE IF REQUESTED
+    # ============================
+    # 🔧 BUILD OUTPUT FILENAME (CUSTOM FORMAT)
+    # ============================
+
+    # Ambil environment info dari OS-INFORMATION
+    env = {}
+    if os_info is not None:
+        for _, row in os_info.iterrows():
+            env[row["STAT_NAME"]] = row["STAT_VALUE"]
+
+    db_name = env.get("DB_NAME", "UNKNOWN")
+    dbid = env.get("DBID", "UNKNOWN")
+
+    # Format timestamp untuk nama file
+    start_ts = start_time.strftime("%Y%m%d-%H%M")
+    end_ts = end_time.strftime("%Y%m%d-%H%M")
+
+    # Nama file sesuai preferensi user
+    default_filename = f"{db_name}_{dbid}_{start_ts}_{end_ts}_awr_rag_output.txt"
+    if save_path:
+        # Jika save_path adalah folder → gunakan default_filename
+        if os.path.isdir(save_path):
+            save_path = os.path.join(save_path, default_filename)
+
+        # Jika save_path adalah file → gunakan apa adanya
+        else:
+            folder = os.path.dirname(save_path)
+            if folder == "":
+                save_path = os.path.join(".", default_filename)
+
+        # Pastikan folder ada
         folder = os.path.dirname(save_path)
         if folder:
             os.makedirs(folder, exist_ok=True)
@@ -297,9 +376,9 @@ END OF REPORT
 
         print(f"💾 Report saved to: {save_path}")
 
-    print("\n================= REPORT OUTPUT =================\n")
+    #print("\n================= REPORT OUTPUT =================\n")
     print(final_report)
-    print("\n=================================================\n")
+    #print("\n=================================================\n")
 
     # Jangan return report (supaya tidak muncul None)
     return
@@ -520,7 +599,54 @@ def main():
     p.add_argument('--rag-run-all', action='store_true',
               help='Parse → ingest → generate full-range RAG report in one execution')
     p.add_argument('--save', default='out_sections', help='Save RAG output to a text file')
+    p.add_argument("--analysis-level", default="technical",
+                        choices=["executive", "technical", "deepdive"])
+    p.add_argument("--recommendation-level", default="medium",
+                        choices=["high", "medium", "expert"])
+    p.add_argument("--language", default="id",
+                        choices=["id", "en"])
+    p.add_argument("--style", default="hybrid",
+                    choices=["hybrid"])
+    p.add_argument(
+        "--preset",
+        choices=["manager", "dba", "expert", "balanced", "english"],
+        help="Gunakan preset konfigurasi prompting"
+    )
+
+
     args = p.parse_args()
+    analysis_level = args.analysis_level
+    recommendation_level = args.recommendation_level
+    language = args.language
+    style = args.style
+    # Apply preset if provided
+    if args.preset == "manager":
+        analysis_level = "executive"
+        recommendation_level = "high"
+        language = "id"
+        style = "hybrid"
+
+    elif args.preset == "dba":
+        analysis_level = "technical"
+        recommendation_level = "medium"
+        language = "id"
+        style = "hybrid"
+
+    elif args.preset == "expert":
+        analysis_level = "deepdive"
+        recommendation_level = "expert"
+        language = "id"
+        style = "hybrid"
+
+    elif args.preset == "balanced":
+        analysis_level = "technical"
+        recommendation_level = "medium"
+        language = "id"
+        style = "hybrid"
+
+    elif args.preset == "english":
+        language = "en"
+
     pd.set_option('future.no_silent_downcasting', True)
     # Accept either a full/relative path or a filename. Expand user and
     # resolve to absolute path. If a plain filename is provided, resolve
@@ -540,6 +666,37 @@ def main():
         aas = dfs.get("AVERAGE-ACTIVE-SESSIONS")
         top_wait = dfs.get("TOP-N-TIMED-EVENTS")
         top_sql = dfs.get("TOP-SQL-BY-SNAPID")
+        # ============================
+        # 🔧 KONVERSI TIPE DATA MAIN-METRICS
+        # ============================
+
+        if main_metric is not None:
+        
+            # Normalisasi nama kolom
+            col_map = {
+                "SNAP_ID": "snap",
+                "snap": "snap",
+                "DUR_M": "dur_m",
+                "dur_m": "dur_m",
+                "END": "end",
+                "end": "end",
+            }
+            main_metric.rename(
+                columns={k: v for k, v in col_map.items() if k in main_metric.columns},
+                inplace=True,
+            )
+            # Konversi tipe data
+            main_metric["snap"] = pd.to_numeric(main_metric["snap"], errors="coerce").astype("Int64")
+            main_metric["dur_m"] = pd.to_numeric(main_metric["dur_m"], errors="coerce").astype("Int64")
+
+            # Konversi end → datetime
+            main_metric["end"] = pd.to_datetime(
+                main_metric["end"],
+                format="%y/%m/%d %H:%M",
+                errors="coerce",
+            )
+            # Hitung start_time
+            main_metric["start"] = main_metric["end"] - pd.to_timedelta(main_metric["dur_m"], unit="m")
     except FileNotFoundError:
         print(f"Error: Input file not found: {input_path}", file=sys.stderr)
         sys.exit(2)
@@ -589,6 +746,7 @@ def main():
             print(f"Section: {name}  (rows={(0 if df is None else df.shape[0])})")
             with pd.option_context('display.max_rows', 10, 'display.max_columns', 20):
                 print(df.head(10).to_string(index=False))
+
 
         # =====Store in Redis
         #try:
@@ -734,7 +892,12 @@ def main():
             top_wait=top_wait,
             top_sql=top_sql,
             save_path=save_path,
+            analysis_level=analysis_level,
+            recommendation_level=recommendation_level,
+            language=language,
+            style=style,
         )
+
     
         print(report)
         return
