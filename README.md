@@ -79,7 +79,9 @@ Nama file otomatis:
 
 
 # 📦 Instalasi
+
 1. Clone repository
+
 git clone https://github.com/yourrepo/awr-rag-analyzer.git
 cd awr-rag-analyzer
 
@@ -106,6 +108,7 @@ cd awr-rag-analyzer
 
 
 🔹 Jalankan full RAG pipeline
+
 Parse → ingest → generate report:
 
     python awrextractor.py awr-hist.out --rag-run-all --save out_reports
