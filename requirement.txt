@@ -13,3 +13,4 @@ python-dotenv>=1.0.0
 einops
 sentence-transformers
 tqdm
+langchain-redis

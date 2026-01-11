@@ -99,7 +99,8 @@ def rag_run_all(
     redis_url="redis://localhost:6379",
     index_name="awr_index",
     llm_base_url="http://localhost:1235/v1",
-    llm_model="meta-llama-3.1-8b-instruct",
+    #llm_model="meta-llama-3.1-8b-instruct", #llama 3.1
+    llm_model="deepseek/deepseek-r1-0528-qwen3-8b", #deepseek qwen 3.1
     save_path=None,
     analysis_level="technical",
     recommendation_level="medium",
