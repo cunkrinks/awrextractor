@@ -36,7 +36,7 @@ from langchain_core.embeddings import Embeddings
 import requests
 
 class LMStudioEmbedding(Embeddings):
-    def __init__(self, url="http://localhost:1235/v1/embeddings", model="text-embedding-bge-base-en-v1.5"):
+    def __init__(self, url="http://localhost:1235/v1/embeddings", model="text-embedding-qwen3-embedding-0.6b"):
         self.url = url
         self.model = model
 
@@ -115,7 +115,7 @@ def sanitize_numeric(df: pd.DataFrame, numeric_cols: List[str]) -> pd.DataFrame:
 
 def create_llm(
     base_url: str = "http://localhost:1235/v1",
-    model: str = "meta-llama-3.1-8b-instruct",
+    model: str = "deepseek-r1-distill-qwen-7b",
     api_key: str = "lm-studio",
     temperature: float = 0.1,
 ) -> ChatOpenAI:
@@ -154,7 +154,7 @@ def create_embeddings():
     print("🔄 Using LM Studio Embedding Server (bge-base @ 1235)")
     return LMStudioEmbedding(
          url="http://localhost:1235/v1/embeddings",
-         model="text-embedding-bge-base-en-v1.5"
+         model="text-embedding-qwen3-embedding-0.6b"
      )
 
 
@@ -1480,7 +1480,7 @@ def rag_run_all(
         start_snap: int,
         end_snap: int,
         llm_base_url: str = "http://localhost:1235/v1",
-        llm_model: str = "meta-llama-3.1-8b-instruct",
+        llm_model: str = "deepseek-r1-distill-qwen-7b",
     ):
         """
         Full pipeline:
