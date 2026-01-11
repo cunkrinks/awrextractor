@@ -1,0 +1,67 @@
+Snapshot Super-Document — SNAP_ID 3381 (Instance 1)
+
+============================================================
+1. Snapshot Info
+============================================================
+Database: NAKULA
+Instance: 1
+Platform: Solaris[tm] OE (64-bit)
+
+SNAP_ID: 3381
+Start Time: 2020-09-01 21:01
+End Time: 2020-09-01 22:00
+Duration: 59.0 minutes
+
+============================================================
+2. CPU & Workload Summary
+============================================================
+- OS CPU Usage: 8.3% (max 42.7%)
+- DB CPU Ratio: 43.7%
+- DB Wait Ratio: 56.5%
+- AAS: 89.9
+- Executions/s: 83.0
+- Logons/s: 43.0
+- SQL Response Time: 21.3 cs
+
+============================================================
+3. Memory Summary
+============================================================
+Instance 1: (no memory data available)
+
+============================================================
+4. Average Active Sessions (AAS)
+============================================================
+(no AAS data)
+
+============================================================
+5. Top Wait Events
+============================================================
+(no top wait data)
+
+============================================================
+6. Top SQL (Ranked by Elapsed Time)
+============================================================
+(No SQL data available for this snapshot)
+
+Ringkasan Top SQL:
+Tidak ada data SQL untuk snapshot ini.
+
+============================================================
+7. I/O Summary
+============================================================
+- Read MB/s: 93.4
+- Write MB/s: 2.9
+- Read IOPS: 1563.6
+- Write IOPS: 24.2
+- Redo MB/s: 0.0
+
+============================================================
+8. RAC / Global Cache
+============================================================
+- gc cr rec/s: 0.7
+- gc cu rec/s: 20.3
+
+============================================================
+9. Overall Interpretation
+============================================================
+- Combine CPU, wait events, AAS, memory, RAC, and Top SQL metrics to identify bottlenecks.

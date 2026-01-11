@@ -36,7 +36,7 @@ from langchain_core.embeddings import Embeddings
 import requests
 
 class LMStudioEmbedding(Embeddings):
-    def __init__(self, url="http://localhost:1235/v1/embeddings", model="text-embedding-bge-base-en-v1.5"):
+    def __init__(self, url="http://localhost:1235/v1/embeddings", model="text-embedding-bge-reranker-v2-m3"):
         self.url = url
         self.model = model
 
@@ -154,7 +154,7 @@ def create_embeddings():
     print("🔄 Using LM Studio Embedding Server (bge-base @ 1235)")
     return LMStudioEmbedding(
          url="http://localhost:1235/v1/embeddings",
-         model="text-embedding-bge-base-en-v1.5"
+         model="text-embedding-bge-reranker-v2-m3"
      )
 
 
