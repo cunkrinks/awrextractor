@@ -1116,7 +1116,7 @@ def docs_to_langchain_documents(docs):
 #    return [Document(page_content=d["text"], metadata=d["metadata"]) for d in docs]
 
 
-def upsert_documents_to_redis(vectorstore, docs, batch_size=10):
+def upsert_documents_to_redis(vectorstore, docs, batch_size=5):
     from tqdm import tqdm
 
     lc_docs = docs_to_langchain_documents(docs)
