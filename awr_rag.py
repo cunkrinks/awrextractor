@@ -36,7 +36,7 @@ from langchain_core.embeddings import Embeddings
 import requests
 
 class LMStudioEmbedding(Embeddings):
-    def __init__(self, url="http://localhost:1235/v1/embeddings", model="text-embedding-bge-base-en-v1.5"):
+    def __init__(self, url="http://localhost:1235/v1/embeddings", model="text-embedding-qwen3-embedding-0.6b"):
         self.url = url
         self.model = model
 
@@ -75,9 +75,12 @@ class LMStudioEmbedding(Embeddings):
 
 
 BASE_SYSTEM_PROMPT = """
-Anda adalah Senior Database Performance Engineer & DBA Specialist.
-Gunakan konteks yang diberikan untuk menjelaskan tren, bottleneck,
-dan rekomendasi tuning secara teknis dan akurat.
+SISTEM PROFIL: Senior Database Performance Engineer & DBA Specialist
+
+TUGAS UTAMA:
+1. Menganalisis data metrik performa database (CPU, Memory, I/O, Latency, Throughput, Connections).
+2. Mengidentifikasi anomali, bottleneck, atau tren penurunan performa.
+3. Memberikan rekomendasi teknis yang konkret (optimasi query, konfigurasi parameter, atau penyesuaian hardware).
 
 PEDOMAN ANALISIS:
 - Hubungan Metrik: Jika CPU tinggi, periksa apakah berkaitan dengan 'Slow Queries' atau 'High Connections'. Jika Latency tinggi tapi CPU rendah, periksa 'Disk I/O' atau 'Network Wait'.
@@ -86,7 +89,14 @@ PEDOMAN ANALISIS:
 
 GAYA BAHASA:
 - Profesional, teknis, dan langsung ke poin (concise).
-- Gunakan istilah teknis seperti: Index Scan, Sequential Scan, Deadlock, Connection Pooling, I/O Wait, dan Cache Hit Ratio
+- Gunakan istilah teknis seperti: Index Scan, Sequential Scan, Deadlock, Connection Pooling, I/O Wait, dan Cache Hit Ratio.
+
+FORMAT LAPORAN:
+1. Ringkasan Status: (Sehat/Peringatan/Kritis)
+2. Temuan Utama: (Daftar anomali yang ditemukan pada data)
+3. Akar Masalah (Root Cause): (Analisa keterkaitan antar metrik)
+4. Rekomendasi Tindakan: (Langkah perbaikan 1, 2, 3)
+5. Prediksi Dampak: (Perkiraan hasil setelah tindakan diambil)
 
 """
 
@@ -115,7 +125,7 @@ def sanitize_numeric(df: pd.DataFrame, numeric_cols: List[str]) -> pd.DataFrame:
 
 def create_llm(
     base_url: str = "http://localhost:1235/v1",
-    model: str = "meta-llama-3.1-8b-instruct",
+    model: str = "deepseek-r1-distill-qwen-7b",
     api_key: str = "lm-studio",
     temperature: float = 0.1,
 ) -> ChatOpenAI:
@@ -154,7 +164,7 @@ def create_embeddings():
     print("🔄 Using LM Studio Embedding Server (bge-base @ 1235)")
     return LMStudioEmbedding(
          url="http://localhost:1235/v1/embeddings",
-         model="text-embedding-bge-base-en-v1.5"
+         model="text-embedding-qwen3-embedding-0.6b"
      )
 
 
@@ -394,7 +404,7 @@ def build_snapshot_superdocs_with_time(
     docs: List[Dict[str, Any]] = []
 
     # Sanitize numeric columns used here
-    os_memory = sanitize_numeric(os_memory, ["SGA", "PGA", "TOTAL"])
+    os_memory = sanitize_numeric(os_memory, ["INSTANCE_NUMBER","SGA", "PGA", "TOTAL"])
     main_metric = sanitize_numeric(
         main_metric,
         [
@@ -542,7 +552,7 @@ Duration: {duration_min} minutes
 - OS CPU Usage: {row.get('os_cpu', row.get('OS_CPU', 'N/A'))}% (max {row.get('os_cpu_max', row.get('OS_CPU_MAX', 'N/A'))}%)
 - DB CPU Ratio: {row.get('db_cpu_ratio', row.get('DB_CPU_RATIO', 'N/A'))}%
 - DB Wait Ratio: {row.get('db_wait_ratio', row.get('DB_WAIT_RATIO', 'N/A'))}%
-- AAS: {row.get('aas', row.get('AAS', 'N/A'))}
+- Average Active Sessions: {row.get('aas', row.get('AAS', 'N/A'))}
 - Executions/s: {row.get('exec_s', row.get('EXEC_S', 'N/A'))}
 - Logons/s: {row.get('logons_s', row.get('LOGONS_S', 'N/A'))}
 - SQL Response Time: {row.get('sql_res_t_cs', row.get('SQL_RES_T_CS', 'N/A'))} cs
@@ -588,7 +598,7 @@ Ringkasan Top SQL:
 ============================================================
 9. Overall Interpretation
 ============================================================
-- Combine CPU, wait events, AAS, memory, RAC, and Top SQL metrics to identify bottlenecks.
+- Combine CPU, wait events, Average Active Sessions, memory, RAC, and Top SQL metrics to identify bottlenecks.
 """.strip()
 
             docs.append(
@@ -1116,7 +1126,7 @@ def docs_to_langchain_documents(docs):
 #    return [Document(page_content=d["text"], metadata=d["metadata"]) for d in docs]
 
 
-def upsert_documents_to_redis(vectorstore, docs, batch_size=10):
+def upsert_documents_to_redis(vectorstore, docs, batch_size=5):
     from tqdm import tqdm
 
     lc_docs = docs_to_langchain_documents(docs)
@@ -1480,7 +1490,7 @@ def rag_run_all(
         start_snap: int,
         end_snap: int,
         llm_base_url: str = "http://localhost:1235/v1",
-        llm_model: str = "meta-llama-3.1-8b-instruct",
+        llm_model: str = "deepseek-r1-distill-qwen-7b",
     ):
         """
         Full pipeline:

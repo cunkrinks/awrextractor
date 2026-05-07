@@ -503,23 +503,9 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('input', metavar='INPUT',
                    help='Input file path or name (required). If a path is provided it will be used; otherwise the filename is resolved relative to the current working directory.')
-    p.add_argument('--section', '-s', help='Only extract this named section')
-    p.add_argument('--outdir', '-o', default='out_sections')
-    p.add_argument('--csv', action='store_true', help='Write CSV for extracted sections')
-    p.add_argument('--csv-all', action='store_true', help='Write CSV for all sections')
-    p.add_argument('--excel', action='store_true', help='Write all sections to a single Excel file')
-    p.add_argument('--excel-filename', default='awr_extracted_sections.xlsx', help='Excel output filename (default: awr_extracted_sections.xlsx)')
+   
     p.add_argument('--verbose', '-v',  action='store_true', help='More detialed output')
-    p.add_argument('--rag-ingest', action='store_true', help='Ingest parsed DataFrames into Redis for RAG')
-    p.add_argument('--rag-report-snap', nargs=1, help='Generate RAG report for a specific SNAP_ID (after ingestion)')
-    p.add_argument('--instance', type=int, help='Instance number for snapshot report')
-    p.add_argument('--rag-report-range', nargs=2, help='Generate RAG report for a range of SNAP_ID (after ingestion)')
-    p.add_argument('--rag-ask', nargs='+', help='Ask any question to the RAG system (after ingestion)')
-    p.add_argument('--rag-report-all', action='store_true',
-              help='Generate RAG report for the entire file (auto min/max SNAP_ID) (after ingestion)')
-    p.add_argument('--rag-run-all', action='store_true',
-              help='Parse → ingest → generate full-range RAG report in one execution')
-    p.add_argument('--save', default='out_sections', help='Save RAG output to a text file')
+    
     args = p.parse_args()
     pd.set_option('future.no_silent_downcasting', True)
     # Accept either a full/relative path or a filename. Expand user and
@@ -551,18 +537,9 @@ def main():
     if not dfs:
         print(f"Error: No sections found in file: {input_path}", file=sys.stderr)
         sys.exit(3)
-    if args.section:
-        keys = [k for k in dfs.keys() if k.upper() == args.section.upper()]
-        if not keys:
-            print(f"Section not found: {args.section}")
-            return
-        keys = keys
-    else:
-        keys = list(dfs.keys())
+    keys = list(dfs.keys())
 
-    os.makedirs(args.outdir, exist_ok=True)
-    #outname = os.path.join(args.outdir, 'awr_extracted_sections.csv')    
-      
+    
     # export loop
     for name in keys:
         df = dfs.get(name)
@@ -588,242 +565,9 @@ def main():
             print('\n' + '='*60)
             print(f"Section: {name}  (rows={(0 if df is None else df.shape[0])})")
             with pd.option_context('display.max_rows', 10, 'display.max_columns', 20):
-                print(df.head(10).to_string(index=False))
-
-        # =====Store in Redis
-        #try:
-        #    r = redis.Redis(host='192.168.1.233', port=6379, db=2)
-        #    key_name = f"{dbname}/{dbid}:{sanitize_name(name)}"
-        #    df_bytes = pa.serialize_pandas(df).to_pybytes()
-        #    r.set(key_name, df_bytes)
-        #    print(f"Stored section '{name}' in Redis with key '{key_name}'")
-        #except Exception as e:
-        #    print(f"Failed to store section '{name}' in Redis: {e}")
-        #
-        #r.close()
-
-        # =====Write CSVs
-        if args.csv or args.csv_all:
-            
-            try:
-                outname = os.path.join(args.outdir, 'section_' + sanitize_name(name) + '.csv')
-                df.to_csv(outname, index=False)                
-                print(f"Wrote CSV: {outname}")
-
-            except Exception as e:
-                print(f"Failed to write CSV for {name}: {e}")
-    
+                print(df.head(10).to_string(index=False))     
+                
     # ===== end of export loop
-
-    # ======RAG ingestion (if requested)
-    if args.rag_ingest:
-        from awr_rag import (
-            create_llm, create_embeddings, create_redis_vectorstore,
-            build_os_info_doc, build_snapshot_superdocs_with_time,
-            build_hourly_superdocs, upsert_documents_to_redis
-        )
-
-        emb = create_embeddings()
-        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
-
-        docs = []
-        if os_info is not None:
-            docs.append(build_os_info_doc(os_info))
-        if all(x is not None for x in [os_info, os_memory, main_metric, aas, top_wait, top_sql]):
-            snap_docs = build_snapshot_superdocs_with_time(os_info, os_memory, main_metric, aas, top_wait, top_sql)
-            docs.extend(snap_docs)
-            hour_docs = build_hourly_superdocs(os_info, os_memory, main_metric, aas, top_wait)
-            docs.extend(hour_docs)
-
-        print(f"Ingesting {len(docs)} documents into Redis...")
-        upsert_documents_to_redis(vs, docs)
-        print("RAG ingestion completed.")
-        return
-    # end RAG ingestion
-
-    # ======RAG question report snap (if requested)
-    if args.rag_report_snap:
-        from awr_rag import create_llm, create_embeddings, create_redis_vectorstore, create_snapshot_report_chain
-
-        snap_id = int(args.rag_report_snap[0])
-        instance = args.instance
-
-        llm = create_llm()
-        emb = create_embeddings()
-        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
-
-        chain = create_snapshot_report_chain(llm, vs, snap_id, instance)
-        report = chain.invoke(snap_id)
-        print(report)
-        return
-    # end RAG report snap
-
-    # ======RAG report range (if requested)
-    if args.rag_report_range:
-        from awr_rag import create_llm, create_embeddings, create_redis_vectorstore, create_range_report_chain
-
-        start_snap = int(args.rag_report_range[0])
-        end_snap = int(args.rag_report_range[1])
-
-        llm = create_llm()
-        emb = create_embeddings()
-        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
-
-        chain = create_range_report_chain(llm, vs, start_snap, end_snap)
-        report = chain.invoke(None)
-        print(report)
-        return
-    # end RAG report range
-
-    # ======RAG ask question (if requested)
-    if args.rag_ask:
-        from awr_rag import create_llm, create_embeddings, create_redis_vectorstore, create_qa_rag_chain
-        question = " ".join(args.rag_ask)
-
-        llm = create_llm()
-        emb = create_embeddings()
-        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
-
-        chain = create_qa_rag_chain(llm, vs)
-        answer = chain.invoke(question)
-        print(answer)
-        return
-    # end RAG ask question
-
-    # ======RAG report all (if requested)
-    if args.rag_report_all:
-        from awr_rag import (
-            create_llm,
-            create_embeddings,
-            create_redis_vectorstore,
-            create_range_report_chain
-        )
-
-        if main_metric is None:
-            print("MAIN-METRICS section not found, cannot determine SNAP_ID range.")
-            return
-
-        min_snap = int(main_metric["SNAP_ID"].min())
-        max_snap = int(main_metric["SNAP_ID"].max())
-
-        print(f"Auto-detected SNAP_ID range: {min_snap} to {max_snap}")
-
-        llm = create_llm()
-        emb = create_embeddings()
-        vs = create_redis_vectorstore("redis://localhost:6379", "awr_index", emb)
-
-        chain = create_range_report_chain(llm, vs, min_snap, max_snap)
-        report = chain.invoke(None)
-
-        print("\n================ RAG REPORT (ALL SNAPSHOTS) ================\n")
-        print(report)
-        return
-    # end RAG report all
-
-    # ======RAG RUN ALL (Parse → Ingest → Report ALL)
-    if args.rag_run_all:
-        print("🚀 Menjalankan full pipeline RAG (parse → ingest → report all)...")
-    
-        save_path = args.save if args.save else None
-    
-        report = rag_run_all(
-            os_info=os_info,
-            os_memory=os_memory,
-            main_metric=main_metric,
-            aas=aas,
-            top_wait=top_wait,
-            top_sql=top_sql,
-            save_path=save_path,
-        )
-    
-        print(report)
-        return
-    # end RAG RUN ALL
-    
-    # ======Excel export (if requested)
-    if args.excel:
-        print("\n" + "="*60 + "\n" + "Writing Excel file...")
-        if not OPENPYXL_AVAILABLE:
-            print("Error: --excel flag requires openpyxl. Install with: pip install openpyxl", file=sys.stderr)
-            sys.exit(4)
-        excel_path = os.path.join(args.outdir, args.excel_filename)
-        try:
-            with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-                for name in keys:
-                    df = dfs.get(name)
-                    if df is None or df.shape[0] == 0:
-                        continue
-                    # Sanitize sheet name (max 31 chars, no special chars)
-                    sheet_name = sanitize_name(name)[:31]
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-                    if args.verbose:
-                        print(f"Wrote sheet: {sheet_name}")
-            print(f"Excel file created: {excel_path}")
-        except Exception as e:
-            print(f"Failed to write Excel file: {e}", file=sys.stderr)
-            sys.exit(5)
-    
-    # =====end Excel export        
-    
-    # ======machine learning with orange3
-    #  Data prepation
-    #df = dfs.get("AVERAGE-ACTIVE-SESSIONS")    
-    #pivot_df = df.pivot_table(index='SNAP_ID', columns='WAIT_CLASS', values='AVG_SESS', aggfunc='sum', fill_value=0)
-    #pivot_df = pivot_df.astype(float)
-    ##pivot_df.reset_index(inplace=True)
-    ##print(f"Columns: {list(pivot_df.columns)}") 
-#
-    ## add total column 
-    #pivot_df['Total'] = pivot_df[list(pivot_df.columns)].sum(axis=1)
-#
-    ## add stats
-    #stats=[]
-    #for i in pivot_df['Total']:
-    #    if i  > int(num_cpus):
-    #        stats.append(1)
-    #    else:
-    #        stats.append(0)
-    #pivot_df['STATS'] = stats
-    #print(f"Pivot Table: {pivot_df}")
-#
-#
-    #
-    ##target_variable =  Orange.data.DiscreteVariable("STATS", values=("OK", "NOT OK"))
-#
-    ##domain = Orange.data.Domain([Orange.data.ContinuousVariable("Administrative"),
-    ##             Orange.data.ContinuousVariable("Application"),
-    ##             Orange.data.ContinuousVariable("Cluster"),
-    ##             Orange.data.ContinuousVariable("Commit"),
-    ##             Orange.data.ContinuousVariable("Concurrency"),
-    ##             Orange.data.ContinuousVariable("Configuration"),
-    ##             Orange.data.ContinuousVariable("DB CPU"),
-    ##             Orange.data.ContinuousVariable("Network"),
-    ##             Orange.data.ContinuousVariable("Other"),
-    ##             Orange.data.ContinuousVariable("Scheduler"),
-    ##             Orange.data.ContinuousVariable("System I/O"),
-    ##             Orange.data.ContinuousVariable("User I/O"),
-    ##             Orange.data.ContinuousVariable("TOTAL"),
-    ##             ], target_variable)
-    #
-    #orange_data = Orange.data.Table.from_numpy(domain=None, X=pivot_df.drop('STATS', axis=1).to_numpy(), Y=pivot_df['STATS'] )
-    #learner = Orange.classification.LogisticRegressionLearner(max_iter=10000,  C=1.0)
-    #from Orange.evaluation import CrossValidation, scoring
-    #warnings.filterwarnings("ignore", category=DeprecationWarning, module='Orange')
-    #results = CrossValidation(orange_data, [learner], k=5)
-    #
-    #print(" ")
-    #print("================================ Orange3 Machine Learning Results ================================")
-    #print(f"Result Actual: {results.actual}")
-    #print(f"Result predicted: {results.predicted}")
-    #accuracy = scoring.CA(results)
-    #print(f"Accuracy: {accuracy}")
-    #auc = scoring.AUC(results)
-    #print(f"AUC: {auc}")            
-    ##print(f"Results: {results}")     
-    ##hasil = pivot_df
-    ##hasil['prediction'] = results.predicted[0]
-    ##print(f"Hasil: {hasil}")
-
 
 
 
